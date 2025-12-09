@@ -1,159 +1,167 @@
-#!/bin/bash
-### Set Language
-TEXTDOMAIN=virtualhost
+#!/usr/bin/env bash
+# apache_virtualhost.sh — Clean & Safe Apache VirtualHost Creator/Remover
+# Usage: sudo ./apache_virtualhost.sh create|delete domain [rootDir]
 
-### Set default parameters
-action=$1
-domain=$2
-rootDir=$3
-owner=$(who am i | awk '{print $1}')
-email='webmaster@localhost'
-sitesEnable='/etc/apache2/sites-enabled/'
-sitesAvailable='/etc/apache2/sites-available/'
-userDir='/var/www/'
-sitesAvailabledomain=$sitesAvailable$domain.conf
+set -o errexit
+set -o nounset
+set -o pipefail
+IFS=$'\n\t'
 
-### don't modify from here unless you know what you are doing ####
+ACTION=${1:-}
+DOMAIN=${2:-}
+USER_ROOT=${3:-}
+EMAIL="webmaster@localhost"
+SITES_AVAILABLE="/etc/apache2/sites-available"
+SITES_ENABLED="/etc/apache2/sites-enabled"
+DEFAULT_WEBROOT="/var/www"
+CONF_FILE="$SITES_AVAILABLE/$DOMAIN.conf"
 
-if [ "$(whoami)" != 'root' ]; then
-	echo $"You have no permission to run $0 as non-root user. Use sudo"
-		exit 1;
+err() { echo "ERROR: $*" >&2; }
+info() { echo "INFO: $*"; }
+usage() {
+  echo "Usage: sudo $0 create|delete domain [rootDir]";
+  exit 2;
+}
+
+# Must run as root
+if [[ $(id -u) -ne 0 ]]; then
+  err "Run as root (use sudo)"; exit 1;
 fi
 
-if [ "$action" != 'create' ] && [ "$action" != 'delete' ]
-	then
-		echo $"You need to prompt for action (create or delete) -- Lower-case only"
-		exit 1;
+# Validate ACTION & DOMAIN
+[[ -z "$ACTION" || -z "$DOMAIN" ]] && usage
+[[ "$ACTION" != "create" && "$ACTION" != "delete" ]] && usage
+[[ ! "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] && { err "Invalid domain"; exit 1; }
+
+# Identify original sudo user
+OWNER=${SUDO_USER:-}
+[[ -z "$OWNER" ]] && OWNER=$(logname 2>/dev/null || echo "root")
+
+# Decide webroot
+if [[ -n "$USER_ROOT" ]]; then
+  if [[ "$USER_ROOT" == /* ]]; then
+    ROOT_DIR="$USER_ROOT"
+  else
+    ROOT_DIR="$DEFAULT_WEBROOT/$USER_ROOT"
+  fi
+else
+  SAFE=${DOMAIN//./}
+  ROOT_DIR="$DEFAULT_WEBROOT/$SAFE"
 fi
 
-while [ "$domain" == "" ]
-do
-	echo -e $"Please provide domain. e.g.dev,staging"
-	read domain
-done
+# Add entry to /etc/hosts (safe, no duplicate)
+add_hosts() {
+  local ip="127.0.0.1"
+  if grep -Eq "^[[:space:]]*$ip[[:space:]]+$DOMAIN[[:space:]]*$" /etc/hosts; then
+    info "$DOMAIN already in /etc/hosts"
+  else
+    echo -e "$ip\t$DOMAIN" >> /etc/hosts
+    info "Added $DOMAIN to /etc/hosts"
+  fi
+}
 
-if [ "$rootDir" == "" ]; then
-	rootDir=${domain//./}
+remove_hosts() {
+  sed -i.bak -E "/(^|\s)$DOMAIN(\s|\$)/d" /etc/hosts || true
+  info "Removed $DOMAIN from hosts (backup: /etc/hosts.bak)"
+}
+
+# Create Apache configuration
+create_conf() {
+  if [[ -e "$CONF_FILE" ]]; then err "Config exists: $CONF_FILE"; exit 1; fi
+
+  cat > "$CONF_FILE" <<EOF
+<VirtualHost *:80>
+    ServerAdmin $EMAIL
+    ServerName $DOMAIN
+    ServerAlias $DOMAIN
+
+    DocumentRoot $ROOT_DIR
+
+    <Directory $ROOT_DIR>
+        Options Indexes FollowSymLinks MultiViews
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/$DOMAIN-error.log
+    CustomLog \${APACHE_LOG_DIR}/$DOMAIN-access.log combined
+</VirtualHost>
+EOF
+
+  info "Created config: $CONF_FILE"
+}
+
+# Reload Apache safely
+reload_apache() {
+  apache2ctl configtest
+  systemctl reload apache2 || systemctl restart apache2
+  info "Apache reloaded"
+}
+
+# ---------------- CREATE ----------------
+if [[ "$ACTION" == "create" ]]; then
+  info "Creating VirtualHost for $DOMAIN at $ROOT_DIR"
+
+  # Create webroot
+  if [[ ! -d "$ROOT_DIR" ]]; then
+    mkdir -p "$ROOT_DIR"
+    chmod 755 "$ROOT_DIR"
+    info "Created directory $ROOT_DIR"
+
+    # Add test php file
+    cat > "$ROOT_DIR/phpinfo.php" <<'PHP'
+<?php phpinfo();
+PHP
+    info "Added phpinfo.php"
+  else
+    info "Directory exists: $ROOT_DIR"
+  fi
+
+  # Ownership
+  chown -R "$OWNER:$OWNER" "$ROOT_DIR"
+
+  # Config
+  create_conf
+
+  # Enable site
+  a2ensite "$DOMAIN.conf" >/dev/null
+  info "Enabled site $DOMAIN"
+
+  add_hosts
+  reload_apache
+
+  info "Complete! Visit: http://$DOMAIN"
+  exit 0
 fi
 
-### if root dir starts with '/', don't use /var/www as default starting point
-if [[ "$rootDir" =~ ^/ ]]; then
-	userDir=''
-fi
+# ---------------- DELETE ----------------
+if [[ "$ACTION" == "delete" ]]; then
+  info "Deleting VirtualHost $DOMAIN"
 
-rootDir=$userDir$rootDir
+  if [[ ! -e "$CONF_FILE" ]]; then
+    err "Domain does not exist: $DOMAIN"; exit 1;
+  fi
 
-if [ "$action" == 'create' ]
-	then
-		### check if domain already exists
-		if [ -e $sitesAvailabledomain ]; then
-			echo -e $"This domain already exists.\nPlease Try Another one"
-			exit;
-		fi
+  a2dissite "$DOMAIN.conf" >/dev/null || true
+  info "Disabled site"
 
-		### check if directory exists or not
-		if ! [ -d $rootDir ]; then
-			### create the directory
-			mkdir $rootDir
-			### give permission to root dir
-			chmod 755 $rootDir
-			### write test file in the new domain dir
-			if ! echo "<?php echo phpinfo(); ?>" > $rootDir/phpinfo.php
-			then
-				echo $"ERROR: Not able to write in file $rootDir/phpinfo.php. Please check permissions"
-				exit;
-			else
-				echo $"Added content to $rootDir/phpinfo.php"
-			fi
-		fi
+  rm -f "$CONF_FILE"
+  info "Removed config file"
 
-		### create virtual host rules file
-		if ! echo "
-		<VirtualHost *:80>
-			ServerAdmin $email
-			ServerName $domain
-			ServerAlias $domain
-			DocumentRoot $rootDir
-			<Directory />
-				AllowOverride All
-			</Directory>
-			<Directory $rootDir>
-				Options Indexes FollowSymLinks MultiViews
-				AllowOverride all
-				Require all granted
-			</Directory>
-			ErrorLog /var/log/apache2/$domain-error.log
-			LogLevel error
-			CustomLog /var/log/apache2/$domain-access.log combined
-		</VirtualHost>" > $sitesAvailabledomain
-		then
-			echo -e $"There is an ERROR creating $domain file"
-			exit;
-		else
-			echo -e $"\nNew Virtual Host Created\n"
-		fi
+  remove_hosts
+  reload_apache
 
-		### Add domain in /etc/hosts
-		if ! echo -e "\n127.0.0.1	$domain" >> /etc/hosts
-		then
-			echo $"ERROR: Not able to write in /etc/hosts"
-			exit;
-		else
-			echo -e $"Host added to /etc/hosts file \n"
-		fi
+  # Ask for webroot deletion
+  if [[ -d "$ROOT_DIR" ]]; then
+    read -rp "Delete directory $ROOT_DIR? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+      rm -rf "$ROOT_DIR"
+      info "Deleted $ROOT_DIR"
+    else
+      info "Kept webroot"
+    fi
+  fi
 
-		if [ "$owner" == "" ]; then
-			chown -R $(whoami):$(whoami) $rootDir
-		else
-			chown -R $owner:$owner $rootDir
-		fi
-
-		### enable website
-		a2ensite $domain
-
-		### restart Apache
-		/etc/init.d/apache2 reload
-
-		### show the finished message
-		echo -e $"Complete! \nYou now have a new Virtual Host \nYour new host is: http://$domain \nAnd its located at $rootDir"
-		exit;
-	else
-		### check whether domain already exists
-		if ! [ -e $sitesAvailabledomain ]; then
-			echo -e $"This domain does not exist.\nPlease try another one"
-			exit;
-		else
-			### Delete domain in /etc/hosts
-			newhost=${domain//./\\.}
-			sed -i "/$newhost/d" /etc/hosts
-
-			### disable website
-			a2dissite $domain
-
-			### restart Apache
-			/etc/init.d/apache2 reload
-
-			### Delete virtual host rules files
-			rm $sitesAvailabledomain
-		fi
-
-		### check if directory exists or not
-		if [ -d $rootDir ]; then
-			echo -e $"Delete host root directory ? (y/n)"
-			read deldir
-
-			if [ "$deldir" == 'y' -o "$deldir" == 'Y' ]; then
-				### Delete the directory
-				rm -rf $rootDir
-				echo -e $"Directory deleted"
-			else
-				echo -e $"Host directory conserved"
-			fi
-		else
-			echo -e $"Host directory not found. Ignored"
-		fi
-
-		### show the finished message
-		echo -e $"Complete!\nYou just removed Virtual Host $domain"
-		exit 0;
+  info "Removed VirtualHost $DOMAIN"
+  exit 0
 fi
