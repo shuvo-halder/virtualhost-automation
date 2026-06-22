@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'bin/**'
+      - 'lib/**'
+      - 'virtualhost.sh'
+      - 'virtualhost-nginx.sh'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'bin/**'
+      - 'lib/**'
+      - 'virtualhost.sh'
+      - 'virtualhost-nginx.sh'
+
+jobs:
+  shellcheck:
+    name: ShellCheck Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck on all scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './'
+          severity: warning
+          ignore_names: '*.pot'
+          additional_files: |
+            bin/virtualhost.sh
+            bin/virtualhost-nginx.sh
+            lib/virtualhost-lib.sh
+            virtualhost.sh
+            virtualhost-nginx.sh
+
+  syntax-check:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check bash syntax
+        run: |
+          for script in bin/virtualhost.sh bin/virtualhost-nginx.sh lib/virtualhost-lib.sh virtualhost.sh virtualhost-nginx.sh; do
+            if [ -f "$script" ]; then
+              echo "Checking syntax: $script"
+              bash -n "$script" && echo "  ✓ Syntax OK" || exit 1
+            fi
+          done
+
+  version-check:
+    name: Version Consistency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: |
+          EXPECTED="3.0.0"
+          for file in bin/virtualhost.sh bin/virtualhost-nginx.sh lib/virtualhost-lib.sh; do
+            VERSION=$(grep -E "^readonly SCRIPT_VERSION=|^readonly LIB_VERSION=" "$file" | head -1 | cut -d'"' -f2)
+            if [ "$VERSION" != "$EXPECTED" ]; then
+              echo "Version mismatch in $file: expected $EXPECTED, got $VERSION"
+              exit 1
+            fi
+            echo "  ✓ $file: $VERSION"
+          done
+          echo "All versions consistent at $EXPECTED"

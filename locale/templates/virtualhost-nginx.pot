@@ -1,0 +1,249 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Virtualhost Automation NGINX v3.0.0\n"
+"Report-Msgid-Bugs-To: https://github.com/shuvo-halder/virtualhost-automation/issues\n"
+"Last-Translator: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+
+#: bin/virtualhost-nginx.sh:48
+msgid "This script must be run as root (use sudo)"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:53
+msgid "Domain cannot be empty"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:58
+msgid "Invalid domain: '%s' (use only alphanumeric, dots, and hyphens)"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:63
+msgid "Domain must be at least 3 characters long"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:68
+msgid "Domain validation passed: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:73
+msgid "Nginx is not installed"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:77
+msgid "Nginx is installed"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:82
+msgid "PHP-FPM socket: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:85
+msgid "Unix socket path: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:87
+msgid "TCP socket: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:89
+msgid "PHP-FPM socket format may be incorrect: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:95
+msgid "Auto-detected PHP-FPM %s at: unix:%s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:108
+msgid "Configuration already exists: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:114
+msgid "Creating Nginx configuration: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:117
+msgid "[DRY-RUN] Would create config at: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:196
+msgid "Created Nginx configuration: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:202
+msgid "Configuration not found: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:208
+msgid "Removing Nginx configuration: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:211
+msgid "[DRY-RUN] Would remove config: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:216
+msgid "Removed Nginx configuration: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:222
+msgid "Site already enabled: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:228
+msgid "Enabling site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:231
+msgid "[DRY-RUN] Would enable site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:236
+msgid "Enabled site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:238
+msgid "Failed to enable site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:244
+msgid "Disabling site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:247
+msgid "[DRY-RUN] Would disable site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:252
+msgid "Disabled site: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:254
+msgid "Site was not enabled: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:260
+msgid "Skipping Nginx reload (--skip-reload flag set)"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:264
+msgid "Testing Nginx configuration"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:267
+msgid "[DRY-RUN] Would test and reload Nginx"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:272
+msgid "Nginx configuration test failed"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:273
+msgid "Please check your configuration and try again"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:278
+msgid "Nginx configuration reloaded"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:280
+msgid "Reload failed, attempting restart..."
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:282
+msgid "Nginx restarted"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:284
+msgid "Failed to reload Nginx"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:296
+msgid "Listing enabled Nginx virtual hosts:"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:300
+msgid "Sites-enabled directory not found: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:312
+msgid "(No virtual hosts found)"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:315
+msgid "Total: %d virtual host(s)"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:323
+msgid "Creating virtual host for: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:358
+msgid "Virtual host created successfully!"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:361
+msgid "  Domain: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:362
+msgid "  Root:   %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:363
+msgid "  Visit:  http://%s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:365
+msgid "  HTTPS:  https://%s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:373
+msgid "Virtual host does not exist: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:377
+msgid "Deleting virtual host: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:391
+msgid "Delete web root directory: %s? [y/N]: "
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:393
+msgid "Removed directory: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:395
+msgid "Kept web root directory: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:401
+msgid "Virtual host deleted successfully!"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:408
+msgid "DRY-RUN MODE: No changes will be made"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:411
+msgid "Unknown option: %s"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:414
+msgid "Domain required for create"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:418
+msgid "Domain required for delete"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:430
+msgid "No command specified"
+msgstr ""
+
+#: bin/virtualhost-nginx.sh:432
+msgid "Unknown command: %s"
+msgstr ""

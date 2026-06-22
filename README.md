@@ -1,32 +1,42 @@
-Virtualhost Automation v2.0.0
-===========
+# Virtualhost Automation v3.0.0
 
 > **Production-Grade Virtual Host Manager for Apache & Nginx on Ubuntu/Debian**
 
-Bash scripts to safely create and manage Apache/Nginx virtual hosts on Ubuntu/Debian servers with professional features like logging, dry-run mode, validation, and comprehensive documentation.
+Bash scripts to safely create and manage Apache/Nginx virtual hosts on Ubuntu/Debian servers with professional features like SSL/HTTPS, Let's Encrypt, logging, dry-run mode, validation, JSON output, and comprehensive documentation.
 
 ---
 
 ## ✨ Features
 
 ### Core Features
-- ✅ **Create Virtual Hosts** - Automated setup with best practices
-- ✅ **Delete Virtual Hosts** - Safe removal with backup options
-- ✅ **List All Hosts** - View all active virtual hosts
-- ✅ **DNS Management** - Automatic /etc/hosts entries
-- ✅ **Domain Validation** - Strict input validation
-- ✅ **Permission Management** - Proper ownership and permissions
-- ✅ **Test Files** - Auto-generated phpinfo.php and index.html
+- ✅ **Create Virtual Hosts** — Automated setup with best practices
+- ✅ **Delete Virtual Hosts** — Safe removal with backup options
+- ✅ **List All Hosts** — View all active virtual hosts
+- ✅ **DNS Management** — Automatic /etc/hosts entries
+- ✅ **Domain Validation** — Strict input validation
+- ✅ **Permission Management** — Proper ownership and permissions
+- ✅ **Test Files** — Auto-generated phpinfo.php and index.html
+
+### 🆕 v3.0.0 New Features
+- 🔒 **SSL/HTTPS Support** — Let's Encrypt (`-l`) and self-signed (`--self-signed`) certificates
+- 🔄 **HTTP→HTTPS Redirect** — Force all traffic to HTTPS with `--force-https`
+- 🌐 **www Alias** — Create ServerAlias with www. prefix via `--with-www`
+- ⚡ **Non-Interactive Mode** — Skip prompts with `--force` flag
+- 📋 **JSON Output** — Machine-readable output for `list --json`
+- 🎨 **Colored Output** — Color-coded messages (disable with `--no-color`)
+- 🧩 **Shared Library** — DRY codebase with `lib/virtualhost-lib.sh`
+- 🔍 **PHP-FPM Auto-Detection** (Nginx) — Automatically detects installed PHP versions
+- 🚫 **Skip Options** — `--no-index` and `--no-hosts` for fine-grained control
 
 ### Production Features
-- 🔐 **Security Hardened** - Deny hidden files, proper permissions
-- 📝 **Comprehensive Logging** - All operations logged to `/var/log/virtualhost/`
-- 🔍 **Verbose Mode** - Detailed output with `-v` flag
-- 🎯 **Dry-Run Mode** - Preview changes with `-d` flag without executing
-- 💾 **Backups** - Automatic backups of modified system files
-- ⚡ **Performance** - Gzip compression, caching headers, static file optimization
-- 🐛 **Error Handling** - Graceful error messages and recovery
-- 📚 **Help System** - Full `--help` and `--version` commands
+- 🔐 **Security Hardened** — Deny hidden files, proper permissions, SSL security headers
+- 📝 **Comprehensive Logging** — All operations logged to `/var/log/virtualhost/`
+- 🔍 **Verbose Mode** — Detailed output with `-v` flag
+- 🎯 **Dry-Run Mode** — Preview changes with `-d` flag without executing
+- 💾 **Backups** — Automatic backups of modified system files
+- ⚡ **Performance** — Gzip compression, caching headers, static file optimization
+- 🐛 **Error Handling** — Graceful error messages and recovery
+- 📚 **Help System** — Full `--help` and `--version` commands
 
 ### Apache-Specific
 - `mod_rewrite` enabled by default
@@ -34,13 +44,16 @@ Bash scripts to safely create and manage Apache/Nginx virtual hosts on Ubuntu/De
 - Gzip compression enabled
 - Deny access to hidden files
 - Error/Access logging per domain
+- SSL virtual host with HSTS and security headers
 
 ### Nginx-Specific
 - PHP-FPM socket support (TCP & Unix)
+- Auto-detection of installed PHP-FPM versions
 - Static file caching with 30-day expiry
 - Security hardening (deny hidden files)
 - Fastcgi parameters optimization
 - Per-domain error/access logging
+- SSL server block with HTTP/2 support
 
 ---
 
@@ -51,11 +64,13 @@ Bash scripts to safely create and manage Apache/Nginx virtual hosts on Ubuntu/De
 - PHP 7.0+ (optional, for phpinfo test)
 - Sudo access (root privileges)
 - Bash 4.0+
+- OpenSSL (for self-signed certificates)
+- Certbot (optional, for Let's Encrypt)
 
 ### For Apache:
 ```bash
 sudo apt-get install apache2 apache2-utils php libapache2-mod-php
-sudo a2enmod rewrite
+sudo a2enmod rewrite ssl headers
 ```
 
 ### For Nginx:
@@ -67,35 +82,39 @@ sudo apt-get install nginx php-fpm
 
 ## 📦 Installation
 
-### Method 1: Quick Install (Recommended)
+### Method 1: Clone Repository (Recommended)
+```bash
+git clone https://github.com/shuvo-halder/virtualhost-automation.git
+cd virtualhost-automation
+chmod +x bin/virtualhost.sh bin/virtualhost-nginx.sh lib/virtualhost-lib.sh
+
+# Optional: Link to PATH
+sudo ln -s $(pwd)/bin/virtualhost.sh /usr/local/bin/virtualhost
+sudo ln -s $(pwd)/bin/virtualhost-nginx.sh /usr/local/bin/virtualhost-nginx
+```
+
+### Method 2: Quick Install
 ```bash
 # Download and install both scripts globally
 cd /usr/local/bin
 
 # Apache
-sudo wget https://raw.githubusercontent.com/shuvo-halder/virtualhost-automation/master/virtualhost.sh
+sudo wget https://raw.githubusercontent.com/shuvo-halder/virtualhost-automation/master/bin/virtualhost.sh
 sudo chmod +x virtualhost.sh
 sudo ln -s virtualhost.sh virtualhost
 
 # Nginx
-sudo wget https://raw.githubusercontent.com/shuvo-halder/virtualhost-automation/master/virtualhost-nginx.sh
+sudo wget https://raw.githubusercontent.com/shuvo-halder/virtualhost-automation/master/bin/virtualhost-nginx.sh
 sudo chmod +x virtualhost-nginx.sh
 sudo ln -s virtualhost-nginx.sh virtualhost-nginx
-```
 
-### Method 2: Clone Repository
-```bash
-git clone https://github.com/shuvo-halder/virtualhost-automation.git
-cd virtualhost-automation
-chmod +x virtualhost.sh virtualhost-nginx.sh
-
-# Optional: Link to PATH
-sudo ln -s $(pwd)/virtualhost.sh /usr/local/bin/virtualhost
-sudo ln -s $(pwd)/virtualhost-nginx.sh /usr/local/bin/virtualhost-nginx
+# Shared library
+sudo mkdir -p /usr/local/lib
+sudo wget -O /usr/local/lib/virtualhost-lib.sh https://raw.githubusercontent.com/shuvo-halder/virtualhost-automation/master/lib/virtualhost-lib.sh
 ```
 
 ### Method 3: Manual Download
-1. Download `virtualhost.sh` or `virtualhost-nginx.sh`
+1. Download `bin/virtualhost.sh` or `bin/virtualhost-nginx.sh` and `lib/virtualhost-lib.sh`
 2. Make executable: `chmod +x /path/to/script.sh`
 3. Run with: `sudo /path/to/script.sh [options] command domain`
 
@@ -110,6 +129,9 @@ sudo virtualhost create example.dev
 
 # Create with custom directory
 sudo virtualhost create example.dev /var/www/mysite
+
+# Create with Let's Encrypt SSL
+sudo virtualhost -l create example.dev
 
 # Delete virtual host
 sudo virtualhost delete example.dev
@@ -128,6 +150,9 @@ sudo virtualhost-nginx create example.dev
 
 # Create with custom directory
 sudo virtualhost-nginx create example.dev /var/www/mysite
+
+# Create with Let's Encrypt SSL
+sudo virtualhost-nginx -l create example.dev
 
 # Delete virtual host
 sudo virtualhost-nginx delete example.dev
@@ -162,7 +187,7 @@ sudo virtualhost create example.dev /var/www/custom_dir
 - Generates Apache/Nginx configuration
 - Enables the site
 - Adds entry to /etc/hosts
-- Creates phpinfo.php test file
+- Creates phpinfo.php and index.html test files
 - Reloads web server
 - Logs all operations
 
@@ -175,17 +200,17 @@ sudo virtualhost delete example.dev
 - Disables the site
 - Removes configuration
 - Removes /etc/hosts entry (with backup)
-- Prompts to delete web root
+- Prompts to delete web root (or auto-deletes with `--force`)
 - Reloads web server
 - Logs all operations
 
 #### List Virtual Hosts
 ```bash
 sudo virtualhost list
-sudo virtualhost-nginx list
+sudo virtualhost-nginx list --json
 ```
 
-Shows all enabled virtual hosts with their paths.
+Shows all enabled virtual hosts with their paths. Use `--json` for machine-readable output.
 
 #### Get Help
 ```bash
@@ -214,10 +239,40 @@ Displays script version information.
 | `-s, --skip-reload` | Skip web server reload | `sudo virtualhost -s create example.dev` |
 | `-e, --email` (Apache) | Set admin email | `sudo virtualhost -e admin@example.com create example.dev` |
 | `-p, --php-socket` (Nginx) | PHP-FPM socket | `sudo virtualhost-nginx -p unix:/run/php/php8.1-fpm.sock create example.dev` |
+| `-l, --letsencrypt` | Obtain Let's Encrypt SSL | `sudo virtualhost -l create example.dev` |
+| `--self-signed` | Generate self-signed SSL | `sudo virtualhost --self-signed create example.dev` |
+| `--force-https` | Redirect HTTP to HTTPS | `sudo virtualhost --force-https create example.dev` |
+| `--with-www` | Add www. ServerAlias | `sudo virtualhost --with-www create example.dev` |
+| `--force` | Non-interactive mode | `sudo virtualhost --force delete example.dev` |
+| `--no-index` | Skip test files | `sudo virtualhost --no-index create example.dev` |
+| `--no-hosts` | Skip /etc/hosts edit | `sudo virtualhost --no-hosts create example.dev` |
+| `--json` | JSON output format | `sudo virtualhost list --json` |
+| `--no-color` | Disable colored output | `sudo virtualhost --no-color create example.dev` |
 
 ---
 
 ## 💡 Advanced Usage
+
+### SSL/HTTPS Setup
+
+#### Let's Encrypt (Automatic)
+```bash
+# Create with Let's Encrypt SSL certificate
+sudo virtualhost -l create example.dev
+sudo virtualhost-nginx -l create example.dev
+```
+
+#### Self-Signed Certificate
+```bash
+# Create with self-signed SSL certificate
+sudo virtualhost --self-signed create example.dev
+```
+
+#### Force HTTPS Redirect
+```bash
+# Create with SSL and force HTTPS
+sudo virtualhost --self-signed --force-https create example.dev
+```
 
 ### Dry-Run Mode (Preview Changes)
 Test what would happen without making actual changes:
@@ -234,6 +289,19 @@ sudo virtualhost -v create example.dev
 ```
 
 Shows detailed logs of each operation.
+
+### Non-Interactive Operations
+Skip all confirmation prompts:
+```bash
+sudo virtualhost --force delete example.dev
+```
+
+### JSON Output
+Machine-readable output for automation:
+```bash
+sudo virtualhost list --json
+# {"status":"success","message":"Virtual hosts listed","data":[{"domain":"example.dev","type":"apache"}]}
+```
 
 ### Custom PHP Socket (Nginx)
 Use Unix socket instead of TCP:
@@ -272,6 +340,8 @@ Nginx sites-available:   /etc/nginx/sites-available/
 Nginx sites-enabled:     /etc/nginx/sites-enabled/
 Web root:                /var/www/
 Logs:                    /var/log/virtualhost/
+SSL certificates:        /etc/letsencrypt/live/ (Let's Encrypt)
+                         /etc/ssl/ (self-signed)
 ```
 
 ### Logging
@@ -304,21 +374,23 @@ sudo virtualhost-nginx create example.dev
 ### Apache VirtualHost Template
 Each virtual host gets:
 - ServerAdmin email
-- ServerName and www alias
+- ServerName and optional www alias
 - DocumentRoot configuration
 - mod_rewrite enabled for frameworks
 - Gzip compression
 - Error/Access logging
 - Security headers for hidden files
+- SSL virtual host (if enabled) with HSTS, X-Content-Type-Options, X-Frame-Options
 
 ### Nginx Server Block Template
 Each virtual host gets:
-- Server name configuration
-- PHP-FPM fastcgi configuration
+- Server name configuration with optional www
+- PHP-FPM fastcgi configuration (auto-detected)
 - Static file caching (30 days)
 - Security hardening
 - Per-domain logging
 - Framework-ready rewrites
+- SSL server block (if enabled) with HTTP/2, TLSv1.2/TLSv1.3
 
 ---
 
@@ -331,18 +403,18 @@ sudo virtualhost create mysite.dev
 # Visit: http://mysite.dev
 ```
 
+### Secure Website with SSL
+```bash
+sudo virtualhost --self-signed --force-https create mysite.dev
+# Creates: /var/www/mysite/
+# Visit: https://mysite.dev (auto-redirects from HTTP)
+```
+
 ### Custom Directory
 ```bash
 sudo virtualhost create api.example.dev /var/www/projects/api
 # Creates: /var/www/projects/api/
 # Visit: http://api.example.dev
-```
-
-### Absolute Path
-```bash
-sudo virtualhost create data.example.dev /home/user/www/data
-# Creates: /home/user/www/data/
-# Visit: http://data.example.dev
 ```
 
 ### Development Environment
@@ -423,6 +495,13 @@ sudo lsof -i :80
 # Kill the process or use different port
 ```
 
+### Issue: Let's Encrypt certificate failed
+**Solution:** Ensure port 80 is accessible from the internet
+```bash
+# For local development, use --self-signed instead
+sudo virtualhost --self-signed create example.dev
+```
+
 ---
 
 ## 📚 Logs and Debugging
@@ -484,6 +563,21 @@ tail -f /var/log/virtualhost/*.log
 - Hidden files denied access in Apache/Nginx
 - Proper user/group ownership enforced
 - No SQL injection or command injection possible
+- SSL configurations include HSTS, X-Content-Type-Options, X-Frame-Options
+- Self-signed certificates use 2048-bit RSA keys
+- HTTPS configurations use TLSv1.2 and TLSv1.3 only
+
+---
+
+## 🧪 Running Tests
+
+```bash
+# Run Apache tests
+bash tests/test-virtualhost.sh
+
+# Run Nginx tests
+bash tests/test-virtualhost-nginx.sh
+```
 
 ---
 
@@ -515,6 +609,22 @@ For issues, questions, or suggestions:
 ---
 
 ## 🚀 Changelog
+
+### Version 3.0.0 (2026-06-23)
+- ✨ SSL/HTTPS support (Let's Encrypt & self-signed)
+- ✨ HTTP→HTTPS redirect (`--force-https`)
+- ✨ www alias support (`--with-www`)
+- ✨ Non-interactive mode (`--force`)
+- ✨ JSON output for `list` command
+- ✨ Colored output with `--no-color` option
+- ✨ PHP-FPM auto-detection (Nginx)
+- ✨ Shared library (`lib/virtualhost-lib.sh`)
+- ✨ Skip options (`--no-index`, `--no-hosts`)
+- ✨ GitHub Actions CI workflow
+- ✨ Test suite for both Apache and Nginx
+- ✨ CHANGELOG.md for version tracking
+- 🔧 Fixed Apache ownership bug (owner:group)
+- 📚 Complete documentation overhaul
 
 ### Version 2.0.0 (2026-05-05)
 - ✨ Added comprehensive help system (`--help`, `--version`)
@@ -548,6 +658,8 @@ For issues, questions, or suggestions:
 - [Apache Virtual Host Docs](https://httpd.apache.org/docs/2.4/vhosts/)
 - [Nginx Server Blocks](https://nginx.org/en/docs/http/server_names.html)
 - [PHP-FPM Setup](https://www.php.net/manual/en/install.fpm.php)
+- [Let's Encrypt](https://letsencrypt.org/)
+- [Certbot](https://certbot.eff.org/)
 
 ---
 

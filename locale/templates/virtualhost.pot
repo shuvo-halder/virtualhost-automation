@@ -1,0 +1,233 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Virtualhost Automation v3.0.0\n"
+"Report-Msgid-Bugs-To: https://github.com/shuvo-halder/virtualhost-automation/issues\n"
+"Last-Translator: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+
+#: bin/virtualhost.sh:48
+msgid "This script must be run as root (use sudo)"
+msgstr ""
+
+#: bin/virtualhost.sh:53
+msgid "Domain cannot be empty"
+msgstr ""
+
+#: bin/virtualhost.sh:58
+msgid "Invalid domain: '%s' (use only alphanumeric, dots, and hyphens)"
+msgstr ""
+
+#: bin/virtualhost.sh:63
+msgid "Domain must be at least 3 characters long"
+msgstr ""
+
+#: bin/virtualhost.sh:68
+msgid "Domain validation passed: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:73
+msgid "Apache2 is not installed"
+msgstr ""
+
+#: bin/virtualhost.sh:77
+msgid "Apache2 is installed"
+msgstr ""
+
+#: bin/virtualhost.sh:82
+msgid "mod_rewrite may not be enabled. Run: sudo a2enmod rewrite"
+msgstr ""
+
+#: bin/virtualhost.sh:86
+msgid "mod_ssl is not enabled. Run: sudo a2enmod ssl"
+msgstr ""
+
+#: bin/virtualhost.sh:92
+msgid "Configuration already exists: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:98
+msgid "Creating Apache configuration: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:101
+msgid "[DRY-RUN] Would create config at: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:196
+msgid "Created Apache configuration: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:202
+msgid "Configuration not found: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:208
+msgid "Removing Apache configuration: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:211
+msgid "[DRY-RUN] Would remove config: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:216
+msgid "Removed Apache configuration: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:222
+msgid "Enabling site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:225
+msgid "[DRY-RUN] Would enable site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:230
+msgid "Enabled site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:232
+msgid "Failed to enable site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:238
+msgid "Disabling site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:241
+msgid "[DRY-RUN] Would disable site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:246
+msgid "Disabled site: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:248
+msgid "Site was not enabled: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:254
+msgid "Skipping Apache reload (--skip-reload flag set)"
+msgstr ""
+
+#: bin/virtualhost.sh:258
+msgid "Testing Apache configuration"
+msgstr ""
+
+#: bin/virtualhost.sh:261
+msgid "[DRY-RUN] Would test and reload Apache"
+msgstr ""
+
+#: bin/virtualhost.sh:266
+msgid "Apache configuration test failed"
+msgstr ""
+
+#: bin/virtualhost.sh:267
+msgid "Please check your configuration and try again"
+msgstr ""
+
+#: bin/virtualhost.sh:272
+msgid "Apache configuration reloaded"
+msgstr ""
+
+#: bin/virtualhost.sh:274
+msgid "Reload failed, attempting restart..."
+msgstr ""
+
+#: bin/virtualhost.sh:276
+msgid "Apache restarted"
+msgstr ""
+
+#: bin/virtualhost.sh:278
+msgid "Failed to reload Apache"
+msgstr ""
+
+#: bin/virtualhost.sh:290
+msgid "Listing enabled Apache virtual hosts:"
+msgstr ""
+
+#: bin/virtualhost.sh:294
+msgid "Sites-enabled directory not found: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:305
+msgid "(No virtual hosts found)"
+msgstr ""
+
+#: bin/virtualhost.sh:308
+msgid "Total: %d virtual host(s)"
+msgstr ""
+
+#: bin/virtualhost.sh:316
+msgid "Creating virtual host for: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:350
+msgid "Virtual host created successfully!"
+msgstr ""
+
+#: bin/virtualhost.sh:353
+msgid "  Domain: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:354
+msgid "  Root:   %s"
+msgstr ""
+
+#: bin/virtualhost.sh:355
+msgid "  Visit:  http://%s"
+msgstr ""
+
+#: bin/virtualhost.sh:357
+msgid "  HTTPS:  https://%s"
+msgstr ""
+
+#: bin/virtualhost.sh:365
+msgid "Virtual host does not exist: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:369
+msgid "Deleting virtual host: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:383
+msgid "Delete web root directory: %s? [y/N]: "
+msgstr ""
+
+#: bin/virtualhost.sh:385
+msgid "Removed directory: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:387
+msgid "Kept web root directory: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:393
+msgid "Virtual host deleted successfully!"
+msgstr ""
+
+#: bin/virtualhost.sh:400
+msgid "DRY-RUN MODE: No changes will be made"
+msgstr ""
+
+#: bin/virtualhost.sh:403
+msgid "Unknown option: %s"
+msgstr ""
+
+#: bin/virtualhost.sh:406
+msgid "Domain required for create"
+msgstr ""
+
+#: bin/virtualhost.sh:410
+msgid "Domain required for delete"
+msgstr ""
+
+#: bin/virtualhost.sh:422
+msgid "No command specified"
+msgstr ""
+
+#: bin/virtualhost.sh:424
+msgid "Unknown command: %s"
+msgstr ""
