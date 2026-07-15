@@ -5,7 +5,7 @@
 # License: MIT
 #
 # A clean, safe, and feature-rich script to create/delete Nginx virtual hosts.
-# Includes SSL, Let's Encrypt, dry-run, logging, JSON output, and more.
+# Includes SSL, Let's Encrypt, dry-run, logging, JSON output, proxy pass, and more.
 
 set -o errexit
 set -o nounset
@@ -95,7 +95,7 @@ detect_php_fpm() {
     echo "$PHP_FPM_SOCKET"
 }
 
-# Create Nginx server block configuration
+# Create Nginx server block configuration (standard document root)
 create_nginx_conf() {
     local domain="$1"
     local webroot="$2"
@@ -241,6 +241,168 @@ EOF
     fi
 
     success "Created Nginx configuration: $conf_file"
+    return 0
+}
+
+# Create Nginx reverse proxy configuration
+create_nginx_proxy_conf() {
+    local domain="$1"
+    local proxy_url="$2"
+    local conf_file="$SITES_AVAILABLE/$domain"
+
+    if [[ -e "$conf_file" ]]; then
+        err "Configuration already exists: $conf_file"
+        return 1
+    fi
+
+    verbose "Creating Nginx reverse proxy configuration: $conf_file"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "[DRY-RUN] Would create proxy config at: $conf_file"
+        return 0
+    fi
+
+    # Build server_name
+    local server_name="$domain"
+    if [[ $WITH_WWW -eq 1 ]]; then
+        server_name="$domain www.$domain"
+    fi
+
+    # Build WebSocket proxy config if requested
+    local ws_config=""
+    if [[ $PROXY_WEBSOCKET -eq 1 ]]; then
+        ws_config=$(cat <<WSEOF
+
+    # WebSocket proxy support
+    location /ws {
+        proxy_pass $proxy_url;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400;
+    }
+WSEOF
+)
+    fi
+
+    cat > "$conf_file" <<EOF
+server {
+    listen 80;
+    server_name $server_name;
+
+    # Reverse Proxy Configuration
+    # Proxying all requests to: $proxy_url
+
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Enable proxy buffers
+    proxy_buffering on;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+
+    # Proxy settings
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-Port \$server_port;
+
+    # Increase timeouts for slow apps (Node.js, etc.)
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Main proxy pass
+    location / {
+        proxy_pass $proxy_url;
+        proxy_redirect off;
+    }
+${ws_config}
+    # Logging
+    error_log /var/log/nginx/${domain}_error.log warn;
+    access_log /var/log/nginx/${domain}_access.log combined;
+}
+EOF
+
+    # If SSL is enabled, create HTTPS proxy server block
+    if [[ $ENABLE_SSL -eq 1 ]]; then
+        local ssl_cert="/etc/letsencrypt/live/$domain/fullchain.pem"
+        local ssl_key="/etc/letsencrypt/live/$domain/privkey.pem"
+
+        # Use self-signed paths if not using Let's Encrypt
+        if [[ $SELF_SIGNED -eq 1 ]]; then
+            ssl_cert="/etc/ssl/$domain/fullchain.pem"
+            ssl_key="/etc/ssl/$domain/privkey.pem"
+        fi
+
+        cat >> "$conf_file" <<EOF
+
+server {
+    listen 443 ssl http2;
+    server_name $server_name;
+
+    # SSL Configuration
+    ssl_certificate $ssl_cert;
+    ssl_certificate_key $ssl_key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Proxy settings
+    proxy_buffering on;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-Port \$server_port;
+
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Main proxy pass
+    location / {
+        proxy_pass $proxy_url;
+        proxy_redirect off;
+    }
+${ws_config}
+    error_log /var/log/nginx/${domain}_error.log warn;
+    access_log /var/log/nginx/${domain}_access.log combined;
+}
+EOF
+
+        # Add HTTP→HTTPS redirect if --force-https was used
+        if [[ $FORCE_HTTPS -eq 1 ]]; then
+            cat >> "$conf_file" <<EOF
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name $server_name;
+    return 301 https://\$server_name\$request_uri;
+}
+EOF
+        fi
+    fi
+
+    success "Created Nginx reverse proxy configuration: $conf_file"
     return 0
 }
 
@@ -419,6 +581,15 @@ cmd_create() {
     verbose "Owner: $owner"
     verbose "PHP-FPM socket: $php_socket"
 
+    # Normalize proxy pass (accept port number like 3000, or full URL)
+    if [[ -n "$PROXY_PASS" ]]; then
+        PROXY_PASS=$(normalize_proxy_pass "$PROXY_PASS")
+        verbose "Proxy pass: $PROXY_PASS"
+        if [[ $PROXY_WEBSOCKET -eq 1 ]]; then
+            verbose "WebSocket proxy: enabled"
+        fi
+    fi
+
     # SSL setup (if requested)
     if [[ $ENABLE_SSL -eq 1 ]]; then
         if [[ $SELF_SIGNED -eq 1 ]]; then
@@ -432,8 +603,18 @@ cmd_create() {
 
     # Create operations
     create_webroot "$webroot" "$owner" "$WEB_GROUP"
-    add_phpinfo "$webroot"
-    create_nginx_conf "$domain" "$webroot" "$php_socket" || return 1
+
+    if [[ -n "$PROXY_PASS" ]]; then
+        # Proxy pass mode: skip test files, create proxy config
+        validate_proxy_pass "$PROXY_PASS" || return 1
+        check_proxy_backend "$PROXY_PASS"
+        create_nginx_proxy_conf "$domain" "$PROXY_PASS" || return 1
+    else
+        # Standard mode: create test files and document root config
+        add_phpinfo "$webroot"
+        create_nginx_conf "$domain" "$webroot" "$php_socket" || return 1
+    fi
+
     enable_site "$domain" || return 1
     add_hosts_entry "$domain"
     reload_nginx || return 1
@@ -443,7 +624,12 @@ cmd_create() {
         success "Virtual host created successfully!"
         echo ""
         echo "  Domain: $domain"
-        echo "  Root:   $webroot"
+        if [[ -n "$PROXY_PASS" ]]; then
+            echo "  Proxy:  $PROXY_PASS"
+            echo "  Type:   Reverse Proxy"
+        else
+            echo "  Root:   $webroot"
+        fi
         echo "  Visit:  http://$domain"
         if [[ $ENABLE_SSL -eq 1 ]]; then
             echo "  HTTPS:  https://$domain"
@@ -516,7 +702,7 @@ Usage: sudo $SCRIPT_NAME [OPTIONS] COMMAND DOMAIN [ROOTDIR]
 
 DESCRIPTION:
   Production-grade Nginx virtual host creator and remover v$SCRIPT_VERSION.
-  Safely manages Nginx server blocks, DNS entries, directories, and SSL.
+  Safely manages Nginx server blocks, DNS entries, directories, SSL, PHP-FPM, and reverse proxy.
 
 COMMANDS:
   create DOMAIN [ROOTDIR]   Create a new virtual host
@@ -541,6 +727,9 @@ OPTIONS:
   --no-hosts               Skip /etc/hosts modification
   --json                   Output in JSON format (for list command)
   --no-color               Disable colored output
+  --proxy-pass URL         Reverse proxy to a backend server (e.g., http://localhost:3000)
+                           Supports Node.js, React, Next.js, Vue, or any HTTP server
+  --proxy-websocket        Enable WebSocket proxy support (use with --proxy-pass)
 
 EXAMPLES:
   # Create a new virtual host
@@ -555,14 +744,23 @@ EXAMPLES:
   # Create with self-signed SSL and HTTPS redirect
   sudo $SCRIPT_NAME --self-signed --force-https create example.dev
 
+  # Reverse proxy to Node.js app (e.g., Express, Next.js, React dev server)
+  sudo $SCRIPT_NAME --proxy-pass http://localhost:3000 create myapp.dev
+
+  # Reverse proxy to Node.js with WebSocket support (e.g., Nuxt, Socket.io)
+  sudo $SCRIPT_NAME --proxy-pass http://localhost:3000 --proxy-websocket create myapp.dev
+
+  # Reverse proxy with SSL
+  sudo $SCRIPT_NAME --self-signed --proxy-pass http://localhost:3000 create myapp.dev
+
+  # Use Unix socket for PHP-FPM
+  sudo $SCRIPT_NAME -p unix:/run/php/php8.1-fpm.sock create example.dev
+
   # Delete a virtual host (non-interactive)
   sudo $SCRIPT_NAME --force delete example.dev
 
   # Dry-run mode (show what would happen)
   sudo $SCRIPT_NAME -d create example.dev
-
-  # Use Unix socket for PHP-FPM
-  sudo $SCRIPT_NAME -p unix:/run/php/php8.1-fpm.sock create example.dev
 
   # List all virtual hosts (JSON format)
   sudo $SCRIPT_NAME list --json
@@ -666,6 +864,14 @@ main() {
                 ;;
             --no-color)
                 NO_COLOR=1
+                shift
+                ;;
+            --proxy-pass)
+                PROXY_PASS="$2"
+                shift 2
+                ;;
+            --proxy-websocket)
+                PROXY_WEBSOCKET=1
                 shift
                 ;;
             create|delete|list|help|version)

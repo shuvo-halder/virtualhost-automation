@@ -24,6 +24,8 @@ FORCE_HTTPS=${FORCE_HTTPS:-0}
 WITH_WWW=${WITH_WWW:-0}
 JSON_OUTPUT=${JSON_OUTPUT:-0}
 NO_COLOR=${NO_COLOR:-0}
+PROXY_PASS=${PROXY_PASS:-""}
+PROXY_WEBSOCKET=${PROXY_WEBSOCKET:-0}
 
 # Color codes
 if [[ $NO_COLOR -eq 0 ]] && [[ -t 1 ]]; then
@@ -136,6 +138,63 @@ validate_domain() {
     fi
 
     verbose "Domain validation passed: $domain"
+    return 0
+}
+
+# Normalize proxy pass value: if it's just a number (port), convert to full URL
+# Also accepts full URLs like http://localhost:3000
+normalize_proxy_pass() {
+    local proxy_input="$1"
+
+    if [[ -z "$proxy_input" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # If input is just digits (port number), convert to full URL
+    if [[ "$proxy_input" =~ ^[0-9]+$ ]]; then
+        echo "http://127.0.0.1:$proxy_input"
+        return 0
+    fi
+
+    # If already a full URL, return as-is
+    if [[ "$proxy_input" =~ ^https?:// ]]; then
+        echo "$proxy_input"
+        return 0
+    fi
+
+    # If contains host:port pattern (e.g., localhost:3000, 0.0.0.0:8080)
+    if [[ "$proxy_input" =~ ^[a-zA-Z0-9.-]+:[0-9]+$ ]]; then
+        echo "http://$proxy_input"
+        return 0
+    fi
+
+    # Invalid format, return as-is (let validation catch it)
+    echo "$proxy_input"
+    return 1
+}
+
+# Validate proxy pass URL format
+validate_proxy_pass() {
+    local proxy_url="$1"
+
+    if [[ -z "$proxy_url" ]]; then
+        return 1
+    fi
+
+    # Must start with http:// or https://
+    if ! [[ "$proxy_url" =~ ^https?:// ]]; then
+        err "Proxy pass URL must start with http:// or https://"
+        return 1
+    fi
+
+    # Must contain host:port or just host
+    if ! [[ "$proxy_url" =~ ^https?://[^/]+ ]]; then
+        err "Invalid proxy pass URL format: $proxy_url"
+        return 1
+    fi
+
+    verbose "Proxy pass validation passed: $proxy_url"
     return 0
 }
 
@@ -429,6 +488,44 @@ obtain_letsencrypt_cert() {
     else
         warn "Let's Encrypt certificate acquisition failed (may need port 80 accessible)"
         return 1
+    fi
+}
+
+# ============================================================================
+# PROXY PASS FUNCTIONS
+# ============================================================================
+
+# Validate that the proxy target backend is reachable (basic check)
+check_proxy_backend() {
+    local proxy_url="$1"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        return 0
+    fi
+
+    # Extract host and port from URL
+    local host_port
+    host_port=$(echo "$proxy_url" | sed -E 's|^https?://||' | sed -E 's|/.*$||')
+    local host="${host_port%:*}"
+    local port="${host_port##*:}"
+    if [[ "$host" == "$port" ]]; then
+        port=80
+    fi
+
+    verbose "Checking proxy backend: $host:$port"
+
+    if command -v nc &>/dev/null; then
+        if nc -z -w 2 "$host" "$port" 2>/dev/null; then
+            verbose "Backend is reachable: $host:$port"
+        else
+            warn "Backend $host:$port may not be reachable. Ensure your application is running."
+        fi
+    elif command -v curl &>/dev/null; then
+        if curl -s -o /dev/null --connect-timeout 2 "http://$host:$port" 2>/dev/null; then
+            verbose "Backend is reachable: $host:$port"
+        else
+            warn "Backend $host:$port may not be reachable. Ensure your application is running."
+        fi
     fi
 }
 

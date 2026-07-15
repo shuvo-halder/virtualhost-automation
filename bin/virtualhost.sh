@@ -5,7 +5,7 @@
 # License: MIT
 #
 # A clean, safe, and feature-rich script to create/delete Apache virtual hosts.
-# Includes SSL, Let's Encrypt, dry-run, logging, JSON output, and more.
+# Includes SSL, Let's Encrypt, dry-run, logging, JSON output, proxy pass, and more.
 
 set -o errexit
 set -o nounset
@@ -75,9 +75,21 @@ check_apache_mods() {
     if [[ $ENABLE_SSL -eq 1 ]] && [[ ! -e "$APACHE_MODS_ENABLED/ssl.load" ]]; then
         warn "mod_ssl is not enabled. Run: sudo a2enmod ssl"
     fi
+
+    if [[ -n "$PROXY_PASS" ]]; then
+        if [[ ! -e "$APACHE_MODS_ENABLED/proxy.load" ]]; then
+            warn "mod_proxy is not enabled. Run: sudo a2enmod proxy proxy_http"
+        fi
+        if [[ ! -e "$APACHE_MODS_ENABLED/proxy_http.load" ]]; then
+            warn "mod_proxy_http is not enabled. Run: sudo a2enmod proxy_http"
+        fi
+        if [[ $PROXY_WEBSOCKET -eq 1 ]] && [[ ! -e "$APACHE_MODS_ENABLED/proxy_wstunnel.load" ]]; then
+            warn "mod_proxy_wstunnel is not enabled. Run: sudo a2enmod proxy_wstunnel"
+        fi
+    fi
 }
 
-# Create Apache VirtualHost configuration
+# Create Apache VirtualHost configuration (standard document root)
 create_apache_conf() {
     local domain="$1"
     local webroot="$2"
@@ -220,6 +232,149 @@ EOF
     fi
 
     success "Created Apache configuration: $conf_file"
+    return 0
+}
+
+# Create Apache reverse proxy configuration
+create_apache_proxy_conf() {
+    local domain="$1"
+    local proxy_url="$2"
+    local email="$3"
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
+
+    if [[ -e "$conf_file" ]]; then
+        err "Configuration already exists: $conf_file"
+        return 1
+    fi
+
+    verbose "Creating Apache reverse proxy configuration: $conf_file"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "[DRY-RUN] Would create proxy config at: $conf_file"
+        return 0
+    fi
+
+    # Build ServerAlias
+    local server_alias=""
+    if [[ $WITH_WWW -eq 1 ]]; then
+        server_alias="ServerAlias www.$domain"
+    fi
+
+    # Build WebSocket proxy config if requested
+    local ws_proxy=""
+    if [[ $PROXY_WEBSOCKET -eq 1 ]]; then
+        local ws_url
+        ws_url=$(echo "$proxy_url" | sed 's|^http://|ws://|' | sed 's|^https://|wss://|')
+        ws_proxy=$(cat <<WSEOF
+    # WebSocket reverse proxy
+    <Location /ws>
+        ProxyPass $ws_url
+        ProxyPassReverse $ws_url
+    </Location>
+
+    # WebSocket upgrade support (alternative method)
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} =websocket [NC]
+    RewriteRule /(.*) $ws_url/\$1 [P,L]
+
+WSEOF
+)
+    fi
+
+    cat > "$conf_file" <<EOF
+<VirtualHost *:80>
+    ServerAdmin $email
+    ServerName $domain
+    ${server_alias}
+
+    # Reverse Proxy Configuration
+    # Proxying all requests to: $proxy_url
+
+    # Enable proxy
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    # Main proxy pass
+    ProxyPass / $proxy_url/
+    ProxyPassReverse / $proxy_url/
+
+    # Security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Pass real IP to backend
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+
+${ws_proxy}
+    # Logging
+    ErrorLog \${APACHE_LOG_DIR}/${domain}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain}_access.log combined
+</VirtualHost>
+EOF
+
+    # If SSL is enabled, create HTTPS proxy virtual host
+    if [[ $ENABLE_SSL -eq 1 ]]; then
+        local ssl_cert="/etc/letsencrypt/live/$domain/fullchain.pem"
+        local ssl_key="/etc/letsencrypt/live/$domain/privkey.pem"
+
+        # Use self-signed paths if not using Let's Encrypt
+        if [[ $SELF_SIGNED -eq 1 ]]; then
+            ssl_cert="/etc/ssl/$domain/fullchain.pem"
+            ssl_key="/etc/ssl/$domain/privkey.pem"
+        fi
+
+        cat >> "$conf_file" <<EOF
+
+<VirtualHost *:443>
+    ServerAdmin $email
+    ServerName $domain
+    ${server_alias}
+
+    # SSL Configuration
+    SSLEngine on
+    SSLCertificateFile $ssl_cert
+    SSLCertificateKeyFile $ssl_key
+
+    # Security headers
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Reverse Proxy Configuration
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    # Main proxy pass
+    ProxyPass / $proxy_url/
+    ProxyPassReverse / $proxy_url/
+
+    # Pass real IP to backend
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+
+${ws_proxy}
+    ErrorLog \${APACHE_LOG_DIR}/${domain}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain}_access.log combined
+</VirtualHost>
+EOF
+
+        # Add HTTP→HTTPS redirect if --force-https was used
+        if [[ $FORCE_HTTPS -eq 1 ]]; then
+            cat >> "$conf_file" <<EOF
+
+# Redirect HTTP to HTTPS
+<VirtualHost *:80>
+    ServerName $domain
+    ${server_alias}
+    Redirect permanent / https://$domain/
+</VirtualHost>
+EOF
+        fi
+    fi
+
+    success "Created Apache reverse proxy configuration: $conf_file"
     return 0
 }
 
@@ -385,6 +540,15 @@ cmd_create() {
     verbose "Owner: $owner"
     verbose "Email: $EMAIL"
 
+    # Normalize proxy pass (accept port number like 3000, or full URL)
+    if [[ -n "$PROXY_PASS" ]]; then
+        PROXY_PASS=$(normalize_proxy_pass "$PROXY_PASS")
+        verbose "Proxy pass: $PROXY_PASS"
+        if [[ $PROXY_WEBSOCKET -eq 1 ]]; then
+            verbose "WebSocket proxy: enabled"
+        fi
+    fi
+
     # SSL setup (if requested)
     if [[ $ENABLE_SSL -eq 1 ]]; then
         if [[ $SELF_SIGNED -eq 1 ]]; then
@@ -398,9 +562,19 @@ cmd_create() {
 
     # Create operations
     create_webroot "$webroot" "$owner" "$WEB_GROUP"
-    add_phpinfo "$webroot"
-    add_index_html "$webroot" "$domain"
-    create_apache_conf "$domain" "$webroot" "$EMAIL" || return 1
+
+    if [[ -n "$PROXY_PASS" ]]; then
+        # Proxy pass mode: skip test files, create proxy config
+        validate_proxy_pass "$PROXY_PASS" || return 1
+        check_proxy_backend "$PROXY_PASS"
+        create_apache_proxy_conf "$domain" "$PROXY_PASS" "$EMAIL" || return 1
+    else
+        # Standard mode: create test files and document root config
+        add_phpinfo "$webroot"
+        add_index_html "$webroot" "$domain"
+        create_apache_conf "$domain" "$webroot" "$EMAIL" || return 1
+    fi
+
     enable_site "$domain" || return 1
     add_hosts_entry "$domain"
     reload_apache || return 1
@@ -410,7 +584,12 @@ cmd_create() {
         success "Virtual host created successfully!"
         echo ""
         echo "  Domain: $domain"
-        echo "  Root:   $webroot"
+        if [[ -n "$PROXY_PASS" ]]; then
+            echo "  Proxy:  $PROXY_PASS"
+            echo "  Type:   Reverse Proxy"
+        else
+            echo "  Root:   $webroot"
+        fi
         echo "  Visit:  http://$domain"
         if [[ $ENABLE_SSL -eq 1 ]]; then
             echo "  HTTPS:  https://$domain"
@@ -483,7 +662,7 @@ Usage: sudo $SCRIPT_NAME [OPTIONS] COMMAND DOMAIN [ROOTDIR]
 
 DESCRIPTION:
   Production-grade Apache virtual host creator and remover v$SCRIPT_VERSION.
-  Safely manages Apache server blocks, DNS entries, directories, and SSL.
+  Safely manages Apache server blocks, DNS entries, directories, SSL, and reverse proxy.
 
 COMMANDS:
   create DOMAIN [ROOTDIR]   Create a new virtual host
@@ -508,6 +687,9 @@ OPTIONS:
   --no-hosts               Skip /etc/hosts modification
   --json                   Output in JSON format (for list command)
   --no-color               Disable colored output
+  --proxy-pass URL         Reverse proxy to a backend server (e.g., http://localhost:3000)
+                           Supports Node.js, React, Next.js, Vue, or any HTTP server
+  --proxy-websocket        Enable WebSocket proxy support (use with --proxy-pass)
 
 EXAMPLES:
   # Create a new virtual host
@@ -521,6 +703,15 @@ EXAMPLES:
 
   # Create with self-signed SSL and HTTPS redirect
   sudo $SCRIPT_NAME --self-signed --force-https create example.dev
+
+  # Reverse proxy to Node.js app (e.g., Express, Next.js, React dev server)
+  sudo $SCRIPT_NAME --proxy-pass http://localhost:3000 create myapp.dev
+
+  # Reverse proxy to Node.js with WebSocket support (e.g., Nuxt, Socket.io)
+  sudo $SCRIPT_NAME --proxy-pass http://localhost:3000 --proxy-websocket create myapp.dev
+
+  # Reverse proxy with SSL
+  sudo $SCRIPT_NAME --self-signed --proxy-pass http://localhost:3000 create myapp.dev
 
   # Delete a virtual host (non-interactive)
   sudo $SCRIPT_NAME --force delete example.dev
@@ -540,6 +731,8 @@ NOTES:
   - Logs are stored in: $LOG_DIR/
   - /etc/hosts entries use 127.0.0.1
   - Requires Apache2 with mod_rewrite enabled
+  - For proxy pass: requires mod_proxy and mod_proxy_http (auto-warned)
+  - For WebSocket proxy: requires mod_proxy_wstunnel (auto-warned)
   - Default admin email: $EMAIL
 
 EOF
@@ -634,6 +827,14 @@ main() {
                 ;;
             --no-color)
                 NO_COLOR=1
+                shift
+                ;;
+            --proxy-pass)
+                PROXY_PASS="$2"
+                shift 2
+                ;;
+            --proxy-websocket)
+                PROXY_WEBSOCKET=1
                 shift
                 ;;
             create|delete|list|help|version)

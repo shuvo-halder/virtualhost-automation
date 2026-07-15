@@ -55,6 +55,15 @@ Bash scripts to safely create and manage Apache/Nginx virtual hosts on Ubuntu/De
 - Per-domain error/access logging
 - SSL server block with HTTP/2 support
 
+### 🆕 v3.1.0 Proxy Pass Features
+- 🔄 **Reverse Proxy** — Proxy pass to any backend server (Node.js, React, Next.js, Vue, etc.)
+- 🔌 **WebSocket Support** — WebSocket proxy with `--proxy-websocket` flag
+- 🚀 **Framework Ready** — Works with Express, Next.js, Nuxt, React dev server, Vite, and more
+- ⚡ **Performance Optimized** — Proper proxy buffers, timeouts, and header forwarding
+- 🔒 **SSL with Proxy** — Full SSL/HTTPS support for proxied backends
+- 🧩 **Backend Health Check** — Validates backend is reachable before creating config
+- 📋 **Auto Module Detection** — Warns if required proxy modules are missing (Apache)
+
 ---
 
 ## 📋 Requirements
@@ -317,6 +326,53 @@ sudo virtualhost-nginx -p unix:/run/php/php8.1-fpm.sock create example.dev
 Set server admin email:
 ```bash
 sudo virtualhost -e webmaster@company.com create example.dev
+```
+
+### Reverse Proxy (Node.js, React, Next.js, etc.)
+Proxy pass to any backend server running on your machine:
+
+```bash
+# Node.js / Express app running on port 3000
+sudo virtualhost --proxy-pass http://localhost:3000 create myapp.dev
+
+# React / Vite dev server running on port 5173
+sudo virtualhost-nginx --proxy-pass http://localhost:5173 create reactapp.dev
+
+# Next.js app running on port 3000
+sudo virtualhost --proxy-pass http://localhost:3000 create nextapp.dev
+
+# Vue / Nuxt app with WebSocket support (HMR)
+sudo virtualhost-nginx --proxy-pass http://localhost:3000 --proxy-websocket create nuxtapp.dev
+```
+
+**What it does:**
+- Creates a reverse proxy configuration instead of a document root
+- All requests to `myapp.dev` are forwarded to your backend server
+- Properly forwards real IP, host, and protocol headers
+- Skips test file creation (phpinfo.php, index.html)
+- Works with SSL/HTTPS when combined with `--self-signed` or `-l`
+
+### Reverse Proxy with SSL
+```bash
+# Node.js app with self-signed SSL
+sudo virtualhost --self-signed --proxy-pass http://localhost:3000 create myapp.dev
+
+# Node.js app with Let's Encrypt SSL
+sudo virtualhost -l --proxy-pass http://localhost:3000 create myapp.dev
+
+# With HTTPS redirect
+sudo virtualhost --self-signed --force-https --proxy-pass http://localhost:3000 create myapp.dev
+```
+
+### Reverse Proxy with WebSocket Support
+For apps that need WebSocket connections (Nuxt, Socket.io, Laravel Echo, etc.):
+
+```bash
+# Apache
+sudo virtualhost --proxy-pass http://localhost:3000 --proxy-websocket create myapp.dev
+
+# Nginx
+sudo virtualhost-nginx --proxy-pass http://localhost:3000 --proxy-websocket create myapp.dev
 ```
 
 ### Batch Operations
