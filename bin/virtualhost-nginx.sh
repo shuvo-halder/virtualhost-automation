@@ -100,7 +100,7 @@ create_nginx_conf() {
     local domain="$1"
     local webroot="$2"
     local php_socket="$3"
-    local conf_file="$SITES_AVAILABLE/$domain"
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
 
     if [[ -e "$conf_file" ]]; then
         err "Configuration already exists: $conf_file"
@@ -120,7 +120,9 @@ create_nginx_conf() {
         server_name="$domain www.$domain"
     fi
 
-    cat > "$conf_file" <<EOF
+    # Only write full HTTP block when NOT force-redirecting to HTTPS
+    if [[ $FORCE_HTTPS -eq 0 ]]; then
+        cat > "$conf_file" <<EOF
 server {
     listen 80;
     server_name $server_name;
@@ -149,9 +151,6 @@ server {
 
     # PHP-FPM handling
     location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_pass $php_socket;
         fastcgi_index index.php;
         include snippets/fastcgi-php.conf;
@@ -162,6 +161,7 @@ server {
     access_log /var/log/nginx/${domain}_access.log combined;
 }
 EOF
+    fi
 
     # If SSL is enabled, create HTTPS server block
     if [[ $ENABLE_SSL -eq 1 ]]; then
@@ -213,9 +213,6 @@ server {
     }
 
     location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_pass $php_socket;
         fastcgi_index index.php;
         include snippets/fastcgi-php.conf;
@@ -248,7 +245,7 @@ EOF
 create_nginx_proxy_conf() {
     local domain="$1"
     local proxy_url="$2"
-    local conf_file="$SITES_AVAILABLE/$domain"
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
 
     if [[ -e "$conf_file" ]]; then
         err "Configuration already exists: $conf_file"
@@ -289,7 +286,9 @@ WSEOF
 )
     fi
 
-    cat > "$conf_file" <<EOF
+    # Only write full HTTP proxy block when NOT force-redirecting to HTTPS
+    if [[ $FORCE_HTTPS -eq 0 ]]; then
+        cat > "$conf_file" <<EOF
 server {
     listen 80;
     server_name $server_name;
@@ -331,6 +330,7 @@ ${ws_config}
     access_log /var/log/nginx/${domain}_access.log combined;
 }
 EOF
+    fi
 
     # If SSL is enabled, create HTTPS proxy server block
     if [[ $ENABLE_SSL -eq 1 ]]; then
@@ -409,7 +409,7 @@ EOF
 # Remove Nginx configuration
 remove_conf() {
     local domain="$1"
-    local conf_file="$SITES_AVAILABLE/$domain"
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
 
     if [[ ! -e "$conf_file" ]]; then
         warn "Configuration not found: $conf_file"
@@ -431,8 +431,8 @@ remove_conf() {
 # Enable Nginx site (create symlink)
 enable_site() {
     local domain="$1"
-    local conf_path="$SITES_AVAILABLE/$domain"
-    local link_path="$SITES_ENABLED/$domain"
+    local conf_path="$SITES_AVAILABLE/${domain}.conf"
+    local link_path="$SITES_ENABLED/${domain}.conf"
 
     if [[ -L "$link_path" || -e "$link_path" ]]; then
         verbose "Site already enabled: $link_path"
@@ -457,7 +457,7 @@ enable_site() {
 # Disable Nginx site (remove symlink)
 disable_site() {
     local domain="$1"
-    local link_path="$SITES_ENABLED/$domain"
+    local link_path="$SITES_ENABLED/${domain}.conf"
 
     verbose "Disabling site: $domain"
 
@@ -517,9 +517,9 @@ list_hosts() {
     if [[ $JSON_OUTPUT -eq 1 ]]; then
         local json_entries="["
         local first=true
-        for site in "$SITES_ENABLED"/*; do
+        for site in "$SITES_ENABLED"/*.conf; do
             if [[ -L "$site" ]]; then
-                local domain_name=$(basename "$site")
+                local domain_name=$(basename "$site" .conf)
                 local target=$(readlink "$site")
                 if [[ "$first" == true ]]; then
                     first=false
@@ -543,9 +543,9 @@ list_hosts() {
     fi
 
     local count=0
-    for site in "$SITES_ENABLED"/*; do
+    for site in "$SITES_ENABLED"/*.conf; do
         if [[ -L "$site" ]]; then
-            local domain_name=$(basename "$site")
+            local domain_name=$(basename "$site" .conf)
             local target=$(readlink "$site")
             echo "  ✓ $domain_name -> $target"
             ((count++))
@@ -656,6 +656,12 @@ cmd_delete() {
 
     info "Deleting virtual host: $domain"
 
+    # Capture webroot NOW, before the config file is deleted
+    local webroot=""
+    if [[ -e "$conf_file" ]]; then
+        webroot=$(grep -m1 '^[[:space:]]*root ' "$conf_file" | grep -v '#' | awk '{print $2}' | tr -d ';')
+    fi
+
     # Delete operations
     disable_site "$domain"
     remove_conf "$domain" || return 1
@@ -664,10 +670,6 @@ cmd_delete() {
 
     # Ask about removing webroot (skip if --force is set)
     if [[ $DRY_RUN -eq 0 ]]; then
-        local webroot=""
-        if [[ -e "$SITES_AVAILABLE/$domain" ]]; then
-            webroot=$(grep "root " "$SITES_AVAILABLE/$domain" | grep -v "# " | head -1 | awk '{print $2}' | sed 's/;$//')
-        fi
 
         if [[ -n "$webroot" && -d "$webroot" ]]; then
             if [[ $FORCE -eq 1 ]]; then
@@ -825,6 +827,10 @@ main() {
                 SKIP_RELOAD=1
                 shift
                 ;;
+            -e|--email)
+                EMAIL="$2"
+                shift 2
+                ;;
             -p|--php-socket)
                 PHP_FPM_SOCKET="$2"
                 shift 2
@@ -889,6 +895,15 @@ main() {
     # Get remaining arguments
     domain="${1:-}"
     rootdir="${2:-}"
+
+    # Initialize colors after arg parsing (so --no-color is respected)
+    init_colors
+
+    # Guard: --force-https requires SSL to be enabled
+    if [[ $FORCE_HTTPS -eq 1 ]] && [[ $ENABLE_SSL -eq 0 ]]; then
+        err "--force-https requires --self-signed or --letsencrypt"
+        exit 1
+    fi
 
     # Check root privileges
     check_root

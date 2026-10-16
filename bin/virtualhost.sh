@@ -114,7 +114,9 @@ create_apache_conf() {
         server_alias="ServerAlias www.$domain"
     fi
 
-    cat > "$conf_file" <<EOF
+    # Only write full HTTP block when NOT force-redirecting to HTTPS
+    if [[ $FORCE_HTTPS -eq 0 ]]; then
+        cat > "$conf_file" <<EOF
 <VirtualHost *:80>
     ServerAdmin $email
     ServerName $domain
@@ -159,6 +161,7 @@ create_apache_conf() {
     </IfModule>
 </VirtualHost>
 EOF
+    fi
 
     # If SSL is enabled, create HTTPS virtual host
     if [[ $ENABLE_SSL -eq 1 ]]; then
@@ -281,7 +284,9 @@ WSEOF
 )
     fi
 
-    cat > "$conf_file" <<EOF
+    # Only write full HTTP proxy block when NOT force-redirecting to HTTPS
+    if [[ $FORCE_HTTPS -eq 0 ]]; then
+        cat > "$conf_file" <<EOF
 <VirtualHost *:80>
     ServerAdmin $email
     ServerName $domain
@@ -313,6 +318,7 @@ ${ws_proxy}
     CustomLog \${APACHE_LOG_DIR}/${domain}_access.log combined
 </VirtualHost>
 EOF
+    fi
 
     # If SSL is enabled, create HTTPS proxy virtual host
     if [[ $ENABLE_SSL -eq 1 ]]; then
@@ -616,6 +622,12 @@ cmd_delete() {
 
     info "Deleting virtual host: $domain"
 
+    # Capture webroot NOW, before the config file is deleted
+    local webroot=""
+    if [[ -e "$conf_file" ]]; then
+        webroot=$(grep -m1 "^[[:space:]]*DocumentRoot" "$conf_file" | awk '{print $2}')
+    fi
+
     # Delete operations
     disable_site "$domain"
     remove_conf "$domain" || return 1
@@ -624,10 +636,6 @@ cmd_delete() {
 
     # Ask about removing webroot (skip if --force is set)
     if [[ $DRY_RUN -eq 0 ]]; then
-        local webroot=""
-        if [[ -e "$SITES_AVAILABLE/${domain}.conf" ]]; then
-            webroot=$(grep "DocumentRoot" "$SITES_AVAILABLE/${domain}.conf" | head -1 | awk '{print $2}')
-        fi
 
         if [[ -n "$webroot" && -d "$webroot" ]]; then
             if [[ $FORCE -eq 1 ]]; then
@@ -852,6 +860,15 @@ main() {
     # Get remaining arguments
     domain="${1:-}"
     rootdir="${2:-}"
+
+    # Initialize colors after arg parsing (so --no-color is respected)
+    init_colors
+
+    # Guard: --force-https requires SSL to be enabled
+    if [[ $FORCE_HTTPS -eq 1 ]] && [[ $ENABLE_SSL -eq 0 ]]; then
+        err "--force-https requires --self-signed or --letsencrypt"
+        exit 1
+    fi
 
     # Check root privileges
     check_root

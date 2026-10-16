@@ -28,23 +28,26 @@ PROXY_PASS=${PROXY_PASS:-""}
 PROXY_WEBSOCKET=${PROXY_WEBSOCKET:-0}
 
 # Color codes
-if [[ $NO_COLOR -eq 0 ]] && [[ -t 1 ]]; then
-    readonly C_RED='\033[0;31m'
-    readonly C_GREEN='\033[0;32m'
-    readonly C_YELLOW='\033[1;33m'
-    readonly C_BLUE='\033[0;34m'
-    readonly C_CYAN='\033[0;36m'
-    readonly C_BOLD='\033[1m'
-    readonly C_RESET='\033[0m'
-else
-    readonly C_RED=''
-    readonly C_GREEN=''
-    readonly C_YELLOW=''
-    readonly C_BLUE=''
-    readonly C_CYAN=''
-    readonly C_BOLD=''
-    readonly C_RESET=''
-fi
+# Color variables — populated by init_colors() after argument parsing.
+# Not readonly so init_colors() can assign them after --no-color is parsed.
+C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_CYAN='' C_BOLD='' C_RESET=''
+
+# Initialize color codes.
+# Must be called in each script's main() AFTER the argument-parsing loop,
+# so that --no-color is respected before any output is emitted.
+init_colors() {
+    if [[ ${NO_COLOR:-0} -eq 0 ]] && [[ -t 1 ]]; then
+        C_RED='\033[0;31m'
+        C_GREEN='\033[0;32m'
+        C_YELLOW='\033[1;33m'
+        C_BLUE='\033[0;34m'
+        C_CYAN='\033[0;36m'
+        C_BOLD='\033[1m'
+        C_RESET='\033[0m'
+    else
+        C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_CYAN='' C_BOLD='' C_RESET=''
+    fi
+}
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -169,9 +172,9 @@ normalize_proxy_pass() {
         return 0
     fi
 
-    # Invalid format, return as-is (let validation catch it)
+    # Unrecognized format — return as-is; validate_proxy_pass() will catch errors
     echo "$proxy_input"
-    return 1
+    return 0
 }
 
 # Validate proxy pass URL format
@@ -258,7 +261,7 @@ create_webroot() {
     if chown -R "$owner:$web_group" -- "$webroot" 2>/dev/null; then
         success "Set owner to $owner:$web_group"
     else
-        warn "Could not set owner to $owner (using $web_user)"
+        warn "Could not set owner to $owner (using $web_group)"
         chown -R "$web_group:$web_group" -- "$webroot" 2>/dev/null || true
     fi
 }
@@ -378,18 +381,18 @@ add_hosts_entry() {
         return 0
     fi
 
-    if grep -Eq "^[[:space:]]*$ip[[:space:]]+$domain[[:space:]]*$" "$hosts_file"; then
-        info "Entry already exists in /etc/hosts"
-    else
+    if ! grep -Eq "^[[:space:]]*$ip[[:space:]]+$domain[[:space:]]*$" "$hosts_file"; then
         echo -e "$ip\t$domain" >> "$hosts_file"
         success "Added to /etc/hosts: $ip $domain"
+    else
+        info "Entry already exists in /etc/hosts: $domain"
+    fi
 
-        # Also add www. alias if --with-www was used
-        if [[ $WITH_WWW -eq 1 ]]; then
-            if ! grep -Eq "^[[:space:]]*$ip[[:space:]]+www\.$domain[[:space:]]*$" "$hosts_file"; then
-                echo -e "$ip\twww.$domain" >> "$hosts_file"
-                success "Added to /etc/hosts: $ip www.$domain"
-            fi
+    # Add www. alias independently — idempotent across re-runs
+    if [[ $WITH_WWW -eq 1 ]]; then
+        if ! grep -Eq "^[[:space:]]*$ip[[:space:]]+www\.$domain[[:space:]]*$" "$hosts_file"; then
+            echo -e "$ip\twww.$domain" >> "$hosts_file"
+            success "Added to /etc/hosts: $ip www.$domain"
         fi
     fi
 }
@@ -411,7 +414,9 @@ remove_hosts_entry() {
         return 0
     fi
 
-    if sed -i.bak -E "/(^|\s)${domain}(\s|$)/d" "$hosts_file" 2>/dev/null; then
+    local escaped_domain
+    escaped_domain=$(printf '%s' "$domain" | sed 's/[.[*^$\]/\\&/g')
+    if sed -i.bak -E "/(^|[[:space:]])${escaped_domain}([[:space:]]|$)/d" "$hosts_file" 2>/dev/null; then
         success "Removed from /etc/hosts: $domain"
         success "Backup saved to: ${hosts_file}.bak"
     else
@@ -503,13 +508,19 @@ check_proxy_backend() {
         return 0
     fi
 
+    # Determine correct default port from URL scheme
+    local scheme
+    scheme=$(echo "$proxy_url" | grep -oE '^https?')
+    local default_port=80
+    [[ "$scheme" == "https" ]] && default_port=443
+
     # Extract host and port from URL
     local host_port
     host_port=$(echo "$proxy_url" | sed -E 's|^https?://||' | sed -E 's|/.*$||')
     local host="${host_port%:*}"
     local port="${host_port##*:}"
     if [[ "$host" == "$port" ]]; then
-        port=80
+        port=$default_port
     fi
 
     verbose "Checking proxy backend: $host:$port"
@@ -521,7 +532,7 @@ check_proxy_backend() {
             warn "Backend $host:$port may not be reachable. Ensure your application is running."
         fi
     elif command -v curl &>/dev/null; then
-        if curl -s -o /dev/null --connect-timeout 2 "http://$host:$port" 2>/dev/null; then
+        if curl -s -o /dev/null --connect-timeout 2 "$proxy_url" 2>/dev/null; then
             verbose "Backend is reachable: $host:$port"
         else
             warn "Backend $host:$port may not be reachable. Ensure your application is running."
