@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# virtualhost.sh — Production-Grade Apache VirtualHost Manager v3.0.0
-# Version: 3.0.0
+# virtualhost.sh — Production-Grade Apache VirtualHost Manager v4.0.0
+# Version: 4.0.0
 # Author: Shuvo Halder
 # License: MIT
 #
@@ -28,7 +28,7 @@ fi
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-readonly SCRIPT_VERSION="3.0.0"
+readonly SCRIPT_VERSION="4.0.0"
 readonly SCRIPT_NAME="$(basename "$0")"
 
 # Apache paths
@@ -112,6 +112,11 @@ create_apache_conf() {
     local server_alias=""
     if [[ $WITH_WWW -eq 1 ]]; then
         server_alias="ServerAlias www.$domain"
+    fi
+    if [[ -n "${ALIASES:-}" ]]; then
+        local alias_list
+        alias_list=$(echo "$ALIASES" | tr ',' ' ')
+        server_alias="${server_alias:+$server_alias }ServerAlias $alias_list"
     fi
 
     # Only write full HTTP block when NOT force-redirecting to HTTPS
@@ -261,6 +266,11 @@ create_apache_proxy_conf() {
     local server_alias=""
     if [[ $WITH_WWW -eq 1 ]]; then
         server_alias="ServerAlias www.$domain"
+    fi
+    if [[ -n "${ALIASES:-}" ]]; then
+        local alias_list
+        alias_list=$(echo "$ALIASES" | tr ',' ' ')
+        server_alias="${server_alias:+$server_alias }ServerAlias $alias_list"
     fi
 
     # Build WebSocket proxy config if requested
@@ -528,6 +538,184 @@ list_hosts() {
 }
 
 # ============================================================================
+# ENABLE COMMAND
+# ============================================================================
+
+cmd_enable() {
+    local domain="$1"
+    validate_domain "$domain" || return 1
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
+    if [[ ! -f "$conf_file" ]]; then
+        err "No configuration found for: $domain"
+        return 1
+    fi
+    enable_site "$domain" || return 1
+    reload_apache || return 1
+    success "Enabled virtual host: $domain"
+}
+
+# ============================================================================
+# DISABLE COMMAND
+# ============================================================================
+
+cmd_disable() {
+    local domain="$1"
+    validate_domain "$domain" || return 1
+    disable_site "$domain"
+    reload_apache || return 1
+    success "Disabled virtual host: $domain"
+}
+
+# ============================================================================
+# STATUS COMMAND
+# ============================================================================
+
+cmd_status() {
+    local domain="$1"
+    validate_domain "$domain" || return 1
+
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
+    local enabled_link="$SITES_ENABLED/${domain}.conf"
+
+    echo ""
+    echo "${C_BOLD}=== Virtual Host Status: $domain ===${C_RESET}"
+    echo ""
+
+    # Config file
+    if [[ -f "$conf_file" ]]; then
+        echo "  Config:   $conf_file (exists)"
+    else
+        echo "  Config:   NOT FOUND"
+        return 1
+    fi
+
+    # Enabled / disabled
+    if [[ -L "$enabled_link" ]]; then
+        echo "  Status:   ENABLED"
+    else
+        echo "  Status:   DISABLED"
+    fi
+
+    # DocumentRoot
+    local docroot
+    docroot=$(grep -m1 "^[[:space:]]*DocumentRoot" "$conf_file" | awk '{print $2}')
+    if [[ -n "$docroot" ]]; then
+        echo "  DocRoot:  $docroot"
+        if [[ -d "$docroot" ]]; then
+            echo "  WebRoot:  EXISTS"
+        else
+            echo "  WebRoot:  MISSING"
+        fi
+    fi
+
+    # Proxy
+    local proxy
+    proxy=$(grep -m1 "^[[:space:]]*ProxyPass[[:space:]]" "$conf_file" | awk '{print $3}' || true)
+    if [[ -n "$proxy" ]]; then
+        echo "  Proxy:    $proxy"
+    fi
+
+    # SSL certificate expiry
+    local cert_file="/etc/letsencrypt/live/$domain/fullchain.pem"
+    [[ ! -f "$cert_file" ]] && cert_file="/etc/ssl/$domain/fullchain.pem"
+    if [[ -f "$cert_file" ]] && command -v openssl &>/dev/null; then
+        local expiry
+        expiry=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
+        echo "  SSL Exp:  ${expiry:-N/A}"
+    else
+        echo "  SSL Exp:  No certificate found"
+    fi
+
+    # Config syntax test
+    echo ""
+    echo "  Config test:"
+    apache2ctl configtest 2>&1 | sed 's/^/    /'
+
+    # Last 5 error log lines
+    local error_log="${APACHE_LOG_DIR:-/var/log/apache2}/${domain}_error.log"
+    if [[ -f "$error_log" ]]; then
+        echo ""
+        echo "  Last error log entries:"
+        tail -5 "$error_log" 2>/dev/null | sed 's/^/    /' || true
+    fi
+    echo ""
+}
+
+# ============================================================================
+# CLONE COMMAND
+# ============================================================================
+
+cmd_clone() {
+    local source_domain="$1"
+    local target_domain="$2"
+
+    validate_domain "$source_domain" || return 1
+    validate_domain "$target_domain" || return 1
+
+    local src_conf="$SITES_AVAILABLE/${source_domain}.conf"
+    local dst_conf="$SITES_AVAILABLE/${target_domain}.conf"
+
+    if [[ ! -f "$src_conf" ]]; then
+        err "Source virtual host not found: $source_domain"
+        return 1
+    fi
+
+    if [[ -f "$dst_conf" ]]; then
+        err "Target virtual host already exists: $target_domain"
+        return 1
+    fi
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "[DRY-RUN] Would clone $source_domain -> $target_domain"
+        return 0
+    fi
+
+    sed "s/${source_domain}/${target_domain}/g" "$src_conf" > "$dst_conf"
+    enable_site "$target_domain" || return 1
+    reload_apache || return 1
+    success "Cloned $source_domain -> $target_domain"
+}
+
+# ============================================================================
+# BACKUP COMMAND
+# ============================================================================
+
+cmd_backup() {
+    local domain="$1"
+    validate_domain "$domain" || return 1
+
+    local conf_file="$SITES_AVAILABLE/${domain}.conf"
+    local webroot=""
+    if [[ -f "$conf_file" ]]; then
+        webroot=$(grep -m1 "^[[:space:]]*DocumentRoot" "$conf_file" | awk '{print $2}')
+    fi
+
+    mkdir -p "$BACKUP_DIR"
+    local output="$BACKUP_DIR/${domain}-$(date +%Y%m%d-%H%M%S).tar.gz"
+    perform_backup "$domain" "$conf_file" "$webroot" "$output"
+}
+
+# ============================================================================
+# RESTORE COMMAND
+# ============================================================================
+
+cmd_restore() {
+    local backup_file="$1"
+    perform_restore "$backup_file"
+    reload_apache || return 1
+}
+
+# ============================================================================
+# SSL-RENEW COMMAND
+# ============================================================================
+
+cmd_ssl_renew() {
+    local domain="${1:-}"
+    perform_ssl_renew "$domain"
+    reload_apache || return 1
+}
+
+# ============================================================================
 # CREATE COMMAND
 # ============================================================================
 
@@ -675,6 +863,13 @@ DESCRIPTION:
 COMMANDS:
   create DOMAIN [ROOTDIR]   Create a new virtual host
   delete DOMAIN             Delete an existing virtual host
+  enable DOMAIN             Enable an existing virtual host
+  disable DOMAIN            Disable a virtual host (keeps config)
+  status DOMAIN             Show detailed status of a virtual host
+  clone SRC TARGET          Clone a virtual host to a new domain
+  backup DOMAIN             Backup config, webroot, and SSL certs
+  restore BACKUP_FILE       Restore a virtual host from backup
+  ssl-renew [DOMAIN]        Renew Let's Encrypt certificate(s)
   list                      List all existing virtual hosts
   help                      Show this help message
   version                   Show version information
@@ -698,6 +893,7 @@ OPTIONS:
   --proxy-pass URL         Reverse proxy to a backend server (e.g., http://localhost:3000)
                            Supports Node.js, React, Next.js, Vue, or any HTTP server
   --proxy-websocket        Enable WebSocket proxy support (use with --proxy-pass)
+  --aliases DOMAINS        Comma-separated extra ServerAlias entries (e.g., alias1.dev,alias2.dev)
 
 EXAMPLES:
   # Create a new virtual host
@@ -723,6 +919,27 @@ EXAMPLES:
 
   # Delete a virtual host (non-interactive)
   sudo $SCRIPT_NAME --force delete example.dev
+
+  # Enable / disable a virtual host
+  sudo $SCRIPT_NAME enable example.dev
+  sudo $SCRIPT_NAME disable example.dev
+
+  # Check virtual host status
+  sudo $SCRIPT_NAME status example.dev
+
+  # Clone a virtual host
+  sudo $SCRIPT_NAME clone source.dev target.dev
+
+  # Backup and restore a virtual host
+  sudo $SCRIPT_NAME backup example.dev
+  sudo $SCRIPT_NAME restore /var/backups/virtualhost/example.dev-20240101-120000.tar.gz
+
+  # Renew SSL certificate(s)
+  sudo $SCRIPT_NAME ssl-renew example.dev
+  sudo $SCRIPT_NAME ssl-renew
+
+  # Create with extra aliases
+  sudo $SCRIPT_NAME --aliases alias1.dev,alias2.dev create example.dev
 
   # Dry-run mode (show what would happen)
   sudo $SCRIPT_NAME -d create example.dev
@@ -798,6 +1015,7 @@ main() {
                 ;;
             -e|--email)
                 EMAIL="$2"
+                validate_email "$EMAIL" || exit 1
                 shift 2
                 ;;
             -l|--letsencrypt)
@@ -845,7 +1063,11 @@ main() {
                 PROXY_WEBSOCKET=1
                 shift
                 ;;
-            create|delete|list|help|version)
+            --aliases)
+                ALIASES="$2"
+                shift 2
+                ;;
+            create|delete|list|help|version|enable|disable|status|clone|backup|restore|ssl-renew)
                 command="$1"
                 shift
                 break
@@ -895,6 +1117,34 @@ main() {
             ;;
         version)
             show_version
+            ;;
+        enable)
+            [[ -z "$domain" ]] && { err "Domain required for enable"; usage 1; }
+            cmd_enable "$domain"
+            ;;
+        disable)
+            [[ -z "$domain" ]] && { err "Domain required for disable"; usage 1; }
+            cmd_disable "$domain"
+            ;;
+        status)
+            [[ -z "$domain" ]] && { err "Domain required for status"; usage 1; }
+            cmd_status "$domain"
+            ;;
+        clone)
+            [[ -z "$domain" ]] && { err "Source domain required for clone"; usage 1; }
+            [[ -z "$rootdir" ]] && { err "Target domain required for clone"; usage 1; }
+            cmd_clone "$domain" "$rootdir"
+            ;;
+        backup)
+            [[ -z "$domain" ]] && { err "Domain required for backup"; usage 1; }
+            cmd_backup "$domain"
+            ;;
+        restore)
+            [[ -z "$domain" ]] && { err "Backup file required for restore"; usage 1; }
+            cmd_restore "$domain"
+            ;;
+        ssl-renew)
+            cmd_ssl_renew "${domain:-}"
             ;;
         *)
             if [[ -z "$command" ]]; then

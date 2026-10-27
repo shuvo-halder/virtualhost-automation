@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# virtualhost-lib.sh — Shared Library for VirtualHost Manager v3.0.0
-# Version: 3.0.0
+# virtualhost-lib.sh — Shared Library for VirtualHost Manager v4.0.0
+# Version: 4.0.0
 # Author: Shuvo Halder
 # License: MIT
 #
@@ -9,7 +9,7 @@
 # ============================================================================
 # CONFIGURATION DEFAULTS
 # ============================================================================
-readonly LIB_VERSION="3.0.0"
+readonly LIB_VERSION="4.0.0"
 
 # Feature flags (overridable)
 DRY_RUN=${DRY_RUN:-0}
@@ -26,6 +26,8 @@ JSON_OUTPUT=${JSON_OUTPUT:-0}
 NO_COLOR=${NO_COLOR:-0}
 PROXY_PASS=${PROXY_PASS:-""}
 PROXY_WEBSOCKET=${PROXY_WEBSOCKET:-0}
+ALIASES=${ALIASES:-""}
+BACKUP_DIR=${BACKUP_DIR:-/var/backups/virtualhost}
 
 # Color codes
 # Color variables — populated by init_colors() after argument parsing.
@@ -141,6 +143,25 @@ validate_domain() {
     fi
 
     verbose "Domain validation passed: $domain"
+    return 0
+}
+
+# Validate email address format
+validate_email() {
+    local email="$1"
+
+    if [[ -z "$email" ]]; then
+        err "Email cannot be empty"
+        return 1
+    fi
+
+    # RFC 5322 simplified: local@domain.tld
+    if ! [[ "$email" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]]; then
+        err "Invalid email address: '$email'"
+        return 1
+    fi
+
+    verbose "Email validation passed: $email"
     return 0
 }
 
@@ -350,7 +371,7 @@ add_index_html() {
         <div class="links">
             <a href="phpinfo.php">View PHP Info</a>
         </div>
-        <div class="meta">Powered by virtualhost-automation v3.0.0</div>
+        <div class="meta">Powered by virtualhost-automation v4.0.0</div>
     </div>
 </body>
 </html>
@@ -536,6 +557,164 @@ check_proxy_backend() {
             verbose "Backend is reachable: $host:$port"
         else
             warn "Backend $host:$port may not be reachable. Ensure your application is running."
+        fi
+    fi
+}
+
+# ============================================================================
+# BACKUP / RESTORE / SSL-RENEW FUNCTIONS
+# ============================================================================
+
+# Create a tar.gz backup of a virtual host's config, webroot, and SSL certs
+# Usage: perform_backup DOMAIN CONF_FILE WEBROOT OUTPUT_FILE
+perform_backup() {
+    local domain="$1"
+    local conf_file="$2"
+    local webroot="${3:-}"
+    local output="$4"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "[DRY-RUN] Would backup $domain to $output"
+        return 0
+    fi
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local backup_root="$tmp_dir/$domain"
+    mkdir -p "$backup_root/config" "$backup_root/ssl"
+
+    # Copy config file
+    if [[ -f "$conf_file" ]]; then
+        cp "$conf_file" "$backup_root/config/"
+        verbose "Backed up config: $conf_file"
+    fi
+
+    # Copy webroot
+    if [[ -n "$webroot" && -d "$webroot" ]]; then
+        cp -a "$webroot" "$backup_root/webroot"
+        verbose "Backed up webroot: $webroot"
+    fi
+
+    # Copy SSL certs (Let's Encrypt or self-signed)
+    local le_dir="/etc/letsencrypt/live/$domain"
+    local ss_dir="/etc/ssl/$domain"
+    if [[ -d "$le_dir" ]]; then
+        cp -a "$le_dir" "$backup_root/ssl/letsencrypt"
+        verbose "Backed up LE certs: $le_dir"
+    elif [[ -d "$ss_dir" ]]; then
+        cp -a "$ss_dir" "$backup_root/ssl/selfsigned"
+        verbose "Backed up self-signed certs: $ss_dir"
+    fi
+
+    # Create archive
+    mkdir -p "$(dirname "$output")"
+    tar -czf "$output" -C "$tmp_dir" "$domain"
+    rm -rf "$tmp_dir"
+
+    if [[ -f "$output" ]]; then
+        success "Backup created: $output"
+    else
+        err "Backup failed: $output"
+        return 1
+    fi
+}
+
+# Restore a virtual host from a tar.gz backup
+# Usage: perform_restore BACKUP_FILE
+perform_restore() {
+    local backup_file="$1"
+
+    if [[ ! -f "$backup_file" ]]; then
+        err "Backup file not found: $backup_file"
+        return 1
+    fi
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "[DRY-RUN] Would restore from: $backup_file"
+        return 0
+    fi
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    tar -xzf "$backup_file" -C "$tmp_dir"
+
+    # Find restored domain directory
+    local domain_dir
+    domain_dir=$(find "$tmp_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
+    if [[ -z "$domain_dir" ]]; then
+        err "Could not find domain directory in backup"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    local domain
+    domain=$(basename "$domain_dir")
+
+    # Restore config
+    if [[ -d "$domain_dir/config" ]]; then
+        for f in "$domain_dir/config/"*; do
+            [[ -f "$f" ]] && cp "$f" /etc/apache2/sites-available/ 2>/dev/null ||                              cp "$f" /etc/nginx/sites-available/ 2>/dev/null || true
+        done
+        verbose "Restored config for: $domain"
+    fi
+
+    # Restore webroot
+    if [[ -d "$domain_dir/webroot" ]]; then
+        local target_webroot
+        target_webroot=$(basename "$domain_dir/webroot")
+        cp -a "$domain_dir/webroot" "/var/www/$target_webroot"
+        verbose "Restored webroot to: /var/www/$target_webroot"
+    fi
+
+    # Restore SSL certs
+    if [[ -d "$domain_dir/ssl/letsencrypt" ]]; then
+        mkdir -p "/etc/letsencrypt/live"
+        cp -a "$domain_dir/ssl/letsencrypt" "/etc/letsencrypt/live/$domain"
+        verbose "Restored LE certs for: $domain"
+    elif [[ -d "$domain_dir/ssl/selfsigned" ]]; then
+        mkdir -p "/etc/ssl"
+        cp -a "$domain_dir/ssl/selfsigned" "/etc/ssl/$domain"
+        verbose "Restored self-signed certs for: $domain"
+    fi
+
+    rm -rf "$tmp_dir"
+    success "Restored virtual host: $domain from $backup_file"
+}
+
+# Renew Let's Encrypt certificate for a domain (or all domains)
+# Usage: perform_ssl_renew [DOMAIN]
+perform_ssl_renew() {
+    local domain="${1:-}"
+
+    if ! command -v certbot &>/dev/null; then
+        err "certbot is not installed. Install it with: sudo apt install certbot"
+        return 1
+    fi
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        if [[ -n "$domain" ]]; then
+            info "[DRY-RUN] Would renew cert for: $domain"
+        else
+            info "[DRY-RUN] Would renew all certificates"
+        fi
+        return 0
+    fi
+
+    if [[ -n "$domain" ]]; then
+        verbose "Renewing certificate for: $domain"
+        if certbot renew --cert-name "$domain" --non-interactive 2>/dev/null; then
+            success "Certificate renewed for: $domain"
+        else
+            err "Certificate renewal failed for: $domain"
+            return 1
+        fi
+    else
+        verbose "Renewing all certificates"
+        if certbot renew --non-interactive 2>/dev/null; then
+            success "All certificates renewed"
+        else
+            err "Certificate renewal failed"
+            return 1
         fi
     fi
 }
