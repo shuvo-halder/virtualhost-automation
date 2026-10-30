@@ -720,15 +720,66 @@ perform_ssl_renew() {
 }
 
 # ============================================================================
+# ATOMIC WRITE HELPER
+# ============================================================================
+
+# write_atomic TARGET_PATH
+# Reads stdin, writes to a temp file beside the target, then atomically renames.
+# On failure the temp file is removed and the original is untouched.
+write_atomic() {
+    local target="$1"
+    local tmpfile="${target}.tmp.$$"
+    # Ensure parent directory exists
+    mkdir -p "$(dirname "$target")"
+    if cat > "$tmpfile"; then
+        mv -f "$tmpfile" "$target"
+    else
+        local rc=$?
+        rm -f "$tmpfile"
+        err "write_atomic: failed writing to $target"
+        return $rc
+    fi
+}
+
+# is_site_enabled SERVER DOMAIN
+# SERVER: apache | nginx
+# Returns 0 if the symlink exists in sites-enabled, 1 otherwise.
+is_site_enabled() {
+    local server="$1"
+    local domain="$2"
+    if [[ "$server" == "apache" ]]; then
+        [[ -L "/etc/apache2/sites-enabled/${domain}.conf" ]]
+    else
+        [[ -L "/etc/nginx/sites-enabled/${domain}.conf" ]]
+    fi
+}
+
+# ============================================================================
 # TRAP / CLEANUP
 # ============================================================================
 
 # Cleanup function for rollback on failure
+# To register a rollback file: ROLLBACK_FILES+=("/path/to/file")
+# To register a rollback command: ROLLBACK_CMDS+=("rm -f /path")
+ROLLBACK_FILES=()
+ROLLBACK_CMDS=()
+
 cleanup() {
     local exit_code=$?
     if [[ $exit_code -ne 0 ]] && [[ $DRY_RUN -eq 0 ]]; then
-        warn "Script failed with exit code $exit_code"
-        warn "Check logs for details"
+        warn "Script failed with exit code $exit_code – attempting rollback"
+        # Restore any files that were backed up before modification
+        for f in "${ROLLBACK_FILES[@]+"${ROLLBACK_FILES[@]}"}"; do
+            if [[ -f "${f}.bak" ]]; then
+                mv -f "${f}.bak" "$f" && verbose "Rolled back: $f" || warn "Could not roll back: $f"
+            fi
+        done
+        # Run any registered rollback commands
+        for cmd in "${ROLLBACK_CMDS[@]+"${ROLLBACK_CMDS[@]}"}"; do
+            eval "$cmd" || true
+        done
+        warn "Rollback complete. Check logs for details."
+        log "ERROR: Script exited with code $exit_code. Rollback attempted."
     fi
 }
 

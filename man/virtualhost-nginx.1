@@ -1,0 +1,136 @@
+.TH VIRTUALHOST-NGINX 1 "2026-10-30" "4.0.0" "VirtualHost Automation"
+.SH NAME
+virtualhost-nginx \- Production-grade Nginx virtual host manager
+.SH SYNOPSIS
+.B virtualhost-nginx
+\fICOMMAND\fR
+.RI [ OPTIONS ]
+\fIDOMAIN\fR
+.SH DESCRIPTION
+.B virtualhost-nginx
+creates, deletes, enables, disables, backs up, restores, clones, and checks the
+status of Nginx virtual hosts. It supports SSL (self-signed and Let's Encrypt),
+proxy pass, WebSocket proxying, PHP-FPM integration, custom aliases, email
+validation, dry-run mode, and JSON output.
+.SH COMMANDS
+.TP
+.B create \fIDOMAIN\fR
+Create a new Nginx virtual host for \fIDOMAIN\fR.
+.TP
+.B delete \fIDOMAIN\fR
+Delete the virtual host for \fIDOMAIN\fR (auto-backup before deletion).
+.TP
+.B enable \fIDOMAIN\fR
+Enable a disabled virtual host (idempotent).
+.TP
+.B disable \fIDOMAIN\fR
+Disable an active virtual host without deleting it (idempotent).
+.TP
+.B status \fIDOMAIN\fR
+Show status, paths, SSL expiry, and upstream for \fIDOMAIN\fR.
+.TP
+.B clone \fISOURCE TARGET\fR
+Clone the configuration of \fISOURCE\fR to a new virtual host \fITARGET\fR.
+.TP
+.B backup \fIDOMAIN\fR
+Create a compressed backup archive of the virtual host configuration and webroot.
+.TP
+.B restore \fIBACKUP_FILE\fR
+Restore a virtual host from a backup archive.
+.TP
+.B ssl-renew \fR[\fIDOMAIN\fR]
+Renew Let's Encrypt certificates.
+.SH OPTIONS
+.TP
+.B \-d, \-\-directory \fIPATH\fR
+Override the document root (default: /var/www/DOMAIN).
+.TP
+.B \-e, \-\-email \fIADDRESS\fR
+Administrator email address (validated).
+.TP
+.B \-\-ssl
+Enable TLS with Let's Encrypt.
+.TP
+.B \-\-self-signed
+Generate a self-signed TLS certificate.
+.TP
+.B \-\-force-https
+Redirect HTTP to HTTPS.
+.TP
+.B \-\-with-www
+Add www.\fIDOMAIN\fR to server_name.
+.TP
+.B \-\-aliases \fIALIAS1,ALIAS2,...\fR
+Comma-separated list of additional server_name entries.
+.TP
+.B \-\-php-version \fIVERSION\fR
+PHP-FPM version to use (e.g. 8.1, 8.2). Sets the FastCGI socket path.
+.TP
+.B \-\-proxy-pass \fIURL\fR
+Configure proxy_pass to the given URL or port.
+.TP
+.B \-\-proxy-websocket
+Enable WebSocket proxy upgrade headers.
+.TP
+.B \-n, \-\-dry-run
+Show what would be done without making any changes.
+.TP
+.B \-v, \-\-verbose
+Enable verbose output.
+.TP
+.B \-\-json
+Output results as JSON.
+.TP
+.B \-\-no-color
+Disable colored output.
+.TP
+.B \-f, \-\-force
+Skip confirmation prompts.
+.TP
+.B \-\-skip-reload
+Skip Nginx reload after changes.
+.TP
+.B \-\-skip-index
+Do not create a default index.html.
+.TP
+.B \-\-skip-hosts
+Do not add an /etc/hosts entry.
+.TP
+.B \-\-version
+Print version and exit.
+.TP
+.B \-h, \-\-help
+Print this help message and exit.
+.SH EXAMPLES
+.TP
+Create a PHP 8.2 virtual host:
+.B sudo virtualhost-nginx create example.com --php-version 8.2
+.TP
+Create a Node.js proxy host with SSL:
+.B sudo virtualhost-nginx create api.example.com --proxy-pass 3000 --ssl --force-https
+.TP
+Enable/disable a site:
+.B sudo virtualhost-nginx enable example.com
+.br
+.B sudo virtualhost-nginx disable example.com
+.SH FILES
+.TP
+.I /etc/nginx/sites-available/
+Nginx virtual host configuration files.
+.TP
+.I /etc/nginx/sites-enabled/
+Symlinks to enabled configurations.
+.TP
+.I /var/log/virtualhost/
+Daily log files.
+.TP
+.I /var/backups/virtualhost/
+Backup archives.
+.SH AUTHOR
+Shuvo Halder
+.SH LICENSE
+MIT License. See LICENSE file.
+.SH SEE ALSO
+.BR virtualhost (1),
+.BR nginx (8),
+.BR certbot (1)

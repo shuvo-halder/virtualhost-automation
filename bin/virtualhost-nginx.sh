@@ -582,6 +582,11 @@ cmd_enable() {
         err "No configuration found for: $domain"
         return 1
     fi
+    # Idempotency: no-op if already enabled
+    if is_site_enabled nginx "$domain"; then
+        info "Virtual host is already enabled: $domain"
+        return 0
+    fi
     enable_site "$domain" || return 1
     reload_nginx || return 1
     success "Enabled virtual host: $domain"
@@ -594,6 +599,11 @@ cmd_enable() {
 cmd_disable() {
     local domain="$1"
     validate_domain "$domain" || return 1
+    # Idempotency: no-op if already disabled
+    if ! is_site_enabled nginx "$domain"; then
+        info "Virtual host is already disabled: $domain"
+        return 0
+    fi
     disable_site "$domain"
     reload_nginx || return 1
     success "Disabled virtual host: $domain"
@@ -851,6 +861,17 @@ cmd_delete() {
     fi
 
     info "Deleting virtual host: $domain"
+
+    # Backup before deletion (Phase 3 hardening)
+    if [[ $DRY_RUN -eq 0 ]]; then
+        local pre_del_backup="$BACKUP_DIR/${domain}-pre-delete-$(date +%Y%m%d%H%M%S).tar.gz"
+        info "Creating pre-deletion backup: $pre_del_backup"
+        if perform_backup "$domain" "$conf_file" "${webroot:-}" "$pre_del_backup" 2>/dev/null; then
+            verbose "Pre-deletion backup saved: $pre_del_backup"
+        else
+            warn "Could not create pre-deletion backup (continuing anyway)"
+        fi
+    fi
 
     # Capture webroot NOW, before the config file is deleted
     local webroot=""

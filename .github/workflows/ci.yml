@@ -8,6 +8,7 @@ on:
       - 'lib/**'
       - 'virtualhost.sh'
       - 'virtualhost-nginx.sh'
+      - 'install.sh'
   pull_request:
     branches: [ master, main ]
     paths:
@@ -59,7 +60,7 @@ jobs:
 
       - name: Verify version consistency
         run: |
-          EXPECTED="3.0.0"
+          EXPECTED="4.0.0"
           for file in bin/virtualhost.sh bin/virtualhost-nginx.sh lib/virtualhost-lib.sh; do
             VERSION=$(grep -E "^readonly SCRIPT_VERSION=|^readonly LIB_VERSION=" "$file" | head -1 | cut -d'"' -f2)
             if [ "$VERSION" != "$EXPECTED" ]; then
@@ -69,3 +70,21 @@ jobs:
             echo "  ✓ $file: $VERSION"
           done
           echo "All versions consistent at $EXPECTED"
+
+  verify-features:
+    name: Phase 2 and 3 Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Phase 2 verification
+        run: python3 verify_phase2.py
+
+      - name: Run Phase 3 verification
+        run: python3 verify_phase3.py
+

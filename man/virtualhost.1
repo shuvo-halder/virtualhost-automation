@@ -1,0 +1,139 @@
+.TH VIRTUALHOST 1 "2026-10-30" "4.0.0" "VirtualHost Automation"
+.SH NAME
+virtualhost \- Production-grade Apache virtual host manager
+.SH SYNOPSIS
+.B virtualhost
+\fICOMMAND\fR
+.RI [ OPTIONS ]
+\fIDOMAIN\fR
+.SH DESCRIPTION
+.B virtualhost
+creates, deletes, enables, disables, backs up, restores, clones, and checks the
+status of Apache virtual hosts. It supports SSL (self-signed and Let's Encrypt),
+proxy pass, custom aliases, email validation, dry-run mode, and JSON output.
+.SH COMMANDS
+.TP
+.B create \fIDOMAIN\fR
+Create a new Apache virtual host for \fIDOMAIN\fR.
+.TP
+.B delete \fIDOMAIN\fR
+Delete the virtual host for \fIDOMAIN\fR (auto-backup before deletion).
+.TP
+.B enable \fIDOMAIN\fR
+Enable a disabled virtual host (idempotent).
+.TP
+.B disable \fIDOMAIN\fR
+Disable an active virtual host without deleting it (idempotent).
+.TP
+.B status \fIDOMAIN\fR
+Show status, paths, SSL expiry, and recent error log for \fIDOMAIN\fR.
+.TP
+.B clone \fISOURCE TARGET\fR
+Clone the configuration of \fISOURCE\fR to a new virtual host \fITARGET\fR.
+.TP
+.B backup \fIDOMAIN\fR
+Create a compressed backup archive of the virtual host configuration and webroot.
+.TP
+.B restore \fIBACKUP_FILE\fR
+Restore a virtual host from a backup archive created by the \fBbackup\fR command.
+.TP
+.B ssl-renew \fR[\fIDOMAIN\fR]
+Renew the Let's Encrypt certificate for \fIDOMAIN\fR, or all certificates if
+\fIDOMAIN\fR is omitted.
+.SH OPTIONS
+.TP
+.B \-d, \-\-directory \fIPATH\fR
+Override the document root (default: /var/www/DOMAIN).
+.TP
+.B \-e, \-\-email \fIADDRESS\fR
+Administrator email address (validated against RFC 5322).
+.TP
+.B \-\-ssl
+Obtain a Let's Encrypt certificate for the virtual host.
+.TP
+.B \-\-self-signed
+Generate a self-signed TLS certificate instead of Let's Encrypt.
+.TP
+.B \-\-force-https
+Redirect all HTTP traffic to HTTPS.
+.TP
+.B \-\-with-www
+Add a www.\fIDOMAIN\fR ServerAlias entry.
+.TP
+.B \-\-aliases \fIALIAS1,ALIAS2,...\fR
+Comma-separated list of additional ServerAlias entries.
+.TP
+.B \-\-proxy-pass \fIURL\fR
+Configure ProxyPass to the given URL or port number.
+.TP
+.B \-\-proxy-websocket
+Enable WebSocket proxying (requires \-\-proxy-pass).
+.TP
+.B \-n, \-\-dry-run
+Show what would be done without making any changes.
+.TP
+.B \-v, \-\-verbose
+Enable verbose output.
+.TP
+.B \-\-json
+Output results as JSON.
+.TP
+.B \-\-no-color
+Disable colored terminal output.
+.TP
+.B \-f, \-\-force
+Skip confirmation prompts (use with caution).
+.TP
+.B \-\-skip-reload
+Skip Apache reload after changes.
+.TP
+.B \-\-skip-index
+Do not create a default index.html in the webroot.
+.TP
+.B \-\-skip-hosts
+Do not add an /etc/hosts entry.
+.TP
+.B \-\-version
+Print version and exit.
+.TP
+.B \-h, \-\-help
+Print this help message and exit.
+.SH EXAMPLES
+.TP
+Create a basic virtual host:
+.B sudo virtualhost create example.com
+.TP
+Create with SSL and HTTPS redirect:
+.B sudo virtualhost create example.com --ssl --force-https --email admin@example.com
+.TP
+Clone a host:
+.B sudo virtualhost clone example.com staging.example.com
+.TP
+Backup and restore:
+.B sudo virtualhost backup example.com
+.br
+.B sudo virtualhost restore /var/backups/virtualhost/example.com-20261030.tar.gz
+.TP
+Dry-run deletion:
+.B sudo virtualhost delete example.com --dry-run
+.SH FILES
+.TP
+.I /etc/apache2/sites-available/
+Apache virtual host configuration files.
+.TP
+.I /var/log/virtualhost/
+Daily log files.
+.TP
+.I /var/backups/virtualhost/
+Backup archives.
+.TP
+.I /usr/local/lib/virtualhost-lib.sh
+Shared library.
+.SH AUTHOR
+Shuvo Halder
+.SH LICENSE
+MIT License. See LICENSE file.
+.SH SEE ALSO
+.BR virtualhost-nginx (1),
+.BR apache2ctl (8),
+.BR certbot (1)

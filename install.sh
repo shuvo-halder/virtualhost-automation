@@ -18,6 +18,8 @@ readonly LIB_DIR="/usr/local/lib"
 readonly LOG_DIR="/var/log/virtualhost"
 readonly BACKUP_DIR="/var/backups/virtualhost"
 readonly COMPLETION_DIR="/etc/bash_completion.d"
+readonly MAN_DIR="/usr/share/man/man1"
+readonly LOGROTATE_DIR="/etc/logrotate.d"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
